@@ -1,0 +1,25 @@
+[package]
+name = "urn"
+version = "0.1.0"
+edition = "2018"
+readme = "README.md"
+authors = ["pavlukivan <chayleaf@protonmail.com>"]
+description = "A crate for handling URNs (Unique Resource Identifiers)"
+repository = "https://github.com/trebuchet-games/urn/"
+license = "0BSD OR MIT OR Apache-2.0"
+keywords = ["urn", "uri", "iana", "namespace", "parser"]
+categories = ["parser-implementations", "web-programming", "encoding"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+displaydoc = { version = "0.2.3", default-features = false }
+
+[build-dependencies]
+reqwest = { version = "0.11.4", features = ["blocking"] }
+csv = "1.1.6"
+
+[features]
+std = ["displaydoc/std"]
+default = ["std"]
+
