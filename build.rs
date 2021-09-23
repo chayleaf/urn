@@ -36,6 +36,7 @@ fn main() {
     let mut file = File::create(out_path.join("generated.rs")).unwrap();
     writeln!(file, "#[non_exhaustive]").unwrap();
     writeln!(file, "#[derive(Debug, Eq, PartialEq, Clone, Hash)]").unwrap();
+    writeln!(file, "/// A URN namespace identifier").unwrap();
     writeln!(file, "pub enum Namespace {{").unwrap();
     let mut rdr = csv::Reader::from_reader(body1.as_slice());
     for result in rdr.records() {

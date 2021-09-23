@@ -1,10 +1,24 @@
 //! A crate for handling [URNs](https://datatracker.ietf.org/doc/html/rfc8141).
+//!
+//! # Example
+//! ```
+//! # #[cfg(not(feature = "std"))]
+//! # fn main() { }
+//! # #[cfg(feature = "std")]
+//! # use urn::{Namespace, Urn, UrnBuilder};
+//! # #[cfg(feature = "std")]
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let builder = UrnBuilder::new(Namespace::Example, "1234:5678");
+//! assert_eq!(builder.build()?.to_string(), "urn:example:1234:5678".to_owned());
+//! Ok(())
+//! # }
+//! ```
 #![cfg_attr(not(feature = "std"), no_std)]
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::{borrow::{Cow, ToOwned}, fmt, string::String};
-use core::{convert::TryFrom, result};
+use core::{convert::TryFrom, result, str::FromStr};
 use displaydoc::Display;
 #[cfg(feature = "std")]
 use std::{borrow::Cow, fmt};
@@ -25,6 +39,7 @@ impl TryFrom<String> for Namespace {
     }
 }
 
+/// Consume case-insensitive tag and return the leftover if consumed
 fn eat_tag<'a, 'b>(s: &'a str, tag: &'b str) -> Option<&'a str> {
     if s.len() >= tag.len() && (&s[..tag.len()]).to_ascii_lowercase() == tag {
         Some(&s[tag.len()..])
@@ -182,6 +197,7 @@ fn parse_urn(s: &str) -> Result<Urn> {
     builder.build()
 }
 
+/// A URN validation error
 #[derive(Debug, Display)]
 pub enum Error {
     /// invalid urn scheme
@@ -203,11 +219,10 @@ type Result<T> = result::Result<T, Error>;
 #[cfg(feature = "std")]
 impl std::error::Error for Error {}
 
+/// An RFC2141/8141 URN (Uniform Resource Name).
 #[derive(Debug)]
 pub struct Urn {
-    /// NID, namespace identifier
     namespace: Namespace,
-    /// NSS, namespace-specific string
     nss: String,
     r_component: Option<String>,
     q_component: Option<String>,
@@ -215,6 +230,7 @@ pub struct Urn {
 }
 
 impl Urn {
+    /// Parse a URN
     pub fn parse(urn: &str) -> Result<Self> {
         parse_urn(urn)
     }
@@ -224,6 +240,7 @@ impl Urn {
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
     }
+    /// Set the namespace
     pub fn set_namespace(&mut self, namespace: Namespace) -> Result<()> {
         self.namespace = namespace;
         Ok(())
@@ -233,6 +250,7 @@ impl Urn {
     pub fn nss(&self) -> &str {
         &self.nss
     }
+    /// Set the namespace-specific string (must be a valid NSS and use percent-encoding)
     pub fn set_nss(&mut self, nss: &str) -> Result<()> {
         let (nss, s) = parse_nss(nss)?;
         if !s.is_empty() {
@@ -248,6 +266,7 @@ impl Urn {
     pub fn r_component(&self) -> Option<&str> {
         self.r_component.as_deref()
     }
+    /// Set the r-component (must be a valid r-component and use percent-encoding)
     pub fn set_r_component(&mut self, r_component: Option<&str>) -> Result<()> {
         if let Some(rc) = r_component {
             let (rc, s) = parse_rq_component(rc)?;
@@ -265,6 +284,7 @@ impl Urn {
     pub fn q_component(&self) -> Option<&str> {
         self.q_component.as_deref()
     }
+    /// Set the q-component (must be a valid q-component and use percent-encoding)
     pub fn set_q_component(&mut self, q_component: Option<&str>) -> Result<()> {
         if let Some(qc) = q_component {
             let (qc, s) = parse_rq_component(qc)?;
@@ -282,6 +302,7 @@ impl Urn {
     pub fn f_component(&self) -> Option<&str> {
         self.f_component.as_deref()
     }
+    /// Set the f-component (must be a valid f-component and use percent-encoding)
     pub fn set_f_component(&mut self, f_component: Option<&str>) -> Result<()> {
         if let Some(fc) = f_component {
             let (fc, s) = parse_f_component(fc)?;
@@ -320,6 +341,14 @@ impl fmt::Display for Urn {
     }
 }
 
+impl FromStr for Urn {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self> {
+        Self::parse(s)
+    }
+}
+
+/// A struct used for constructing URNs
 #[derive(Debug)]
 pub struct UrnBuilder {
     /// NID, namespace identifier
@@ -332,6 +361,7 @@ pub struct UrnBuilder {
 }
 
 impl UrnBuilder {
+    /// Create a new UrnBuilder
     pub fn new(namespace: Namespace, nss: &str) -> Self {
         Self {
             namespace,
@@ -341,27 +371,46 @@ impl UrnBuilder {
             f_component: None,
         }
     }
+    /// Change the namespace
     pub fn namespace(mut self, namespace: Namespace) -> Self {
         self.namespace = namespace;
         self
     }
+    /// Change the namespace-specific string
     pub fn nss(mut self, nss: &str) -> Self {
         self.nss = nss.to_owned();
         self
     }
+    /// Change the r-component
     pub fn r_component(mut self, r_component: &str) -> Self {
         self.r_component = Some(r_component.to_owned());
         self
     }
+    /// Change the q-component
     pub fn q_component(mut self, q_component: &str) -> Self {
         self.q_component = Some(q_component.to_owned());
         self
     }
+    /// Change the f-component
     pub fn f_component(mut self, f_component: &str) -> Self {
         self.f_component = Some(f_component.to_owned());
         self
     }
-
+    /// Validate the data and create the URN.
+    ///
+    /// # Example
+    /// ```
+    /// # #[cfg(not(feature = "std"))]
+    /// # fn main() { }
+    /// # #[cfg(feature = "std")]
+    /// # use urn::{Namespace, Urn, UrnBuilder};
+    /// # #[cfg(feature = "std")]
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = UrnBuilder::new(Namespace::Example, "1234:5678");
+    /// assert_eq!(builder.build()?.to_string(), "urn:example:1234:5678".to_owned());
+    /// Ok(())
+    /// # }
+    /// ```
     pub fn build(self) -> Result<Urn> {
         let (nss, s) = parse_nss(&self.nss)?;
         if !s.is_empty() {
