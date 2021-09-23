@@ -109,6 +109,7 @@ fn main() {
         writeln!(file, "    /// Sourced from [the IANA namespace registry](https://www.iana.org/assignments/urn-namespaces/urn-namespaces.xhtml).").unwrap();
         writeln!(file, "    {},", dash_to_pascal(&record.nid)).unwrap();
     }
+    writeln!(file, "    /// An unknown namespace ID.").unwrap();
     writeln!(file, "    Unknown(").unwrap();
     writeln!(file, "        /// The unknown NID. Must follow the [NID syntax rules](https://datatracker.ietf.org/doc/html/rfc8141#section-2)!").unwrap();
     writeln!(file, "        String,").unwrap();
