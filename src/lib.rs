@@ -8,16 +8,21 @@
 //! # use urn::{Namespace, Urn, UrnBuilder};
 //! # #[cfg(feature = "std")]
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let builder = UrnBuilder::new(Namespace::Example, "1234:5678");
-//! assert_eq!(builder.build()?.to_string(), "urn:example:1234:5678".to_owned());
-//! Ok(())
+//! let urn = UrnBuilder::new(Namespace::Example, "1234:5678").build()?;
+//! assert_eq!(urn.to_string(), "urn:example:1234:5678".to_owned());
+//! assert_eq!(urn, "urn:example:1234:5678".parse()?); // Using std::str::parse
+//! # Ok(())
 //! # }
 //! ```
 #![cfg_attr(not(feature = "std"), no_std)]
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 #[cfg(not(feature = "std"))]
-use alloc::{borrow::{Cow, ToOwned}, fmt, string::String};
+use alloc::{
+    borrow::{Cow, ToOwned},
+    fmt,
+    string::String,
+};
 use core::{convert::TryFrom, result, str::FromStr};
 use displaydoc::Display;
 #[cfg(feature = "std")]
@@ -198,7 +203,7 @@ fn parse_urn(s: &str) -> Result<Urn> {
 }
 
 /// A URN validation error
-#[derive(Debug, Display)]
+#[derive(Debug, Display, PartialEq, Eq)]
 pub enum Error {
     /// invalid urn scheme
     InvalidScheme,
@@ -230,10 +235,6 @@ pub struct Urn {
 }
 
 impl Urn {
-    /// Parse a URN
-    pub fn parse(urn: &str) -> Result<Self> {
-        parse_urn(urn)
-    }
     /// NID (Namespace identifier), the first part of the URN.
     /// For example, in `urn:ietf:rfc:2648`, `ietf` is the namespace.
     /// In this crate, it would be defined as [`Namespace::Ietf`].
@@ -242,6 +243,9 @@ impl Urn {
     }
     /// Set the namespace
     pub fn set_namespace(&mut self, namespace: Namespace) -> Result<()> {
+        if matches!(&namespace, Namespace::Unknown(s) if !is_valid_nid(s)) {
+            return Err(Error::InvalidNid);
+        }
         self.namespace = namespace;
         Ok(())
     }
@@ -250,7 +254,7 @@ impl Urn {
     pub fn nss(&self) -> &str {
         &self.nss
     }
-    /// Set the namespace-specific string (must be a valid NSS and use percent-encoding)
+    /// Set the namespace-specific string (must be [a valid NSS](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding)
     pub fn set_nss(&mut self, nss: &str) -> Result<()> {
         let (nss, s) = parse_nss(nss)?;
         if !s.is_empty() {
@@ -266,7 +270,7 @@ impl Urn {
     pub fn r_component(&self) -> Option<&str> {
         self.r_component.as_deref()
     }
-    /// Set the r-component (must be a valid r-component and use percent-encoding)
+    /// Set the r-component (must be [a valid r-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding)
     pub fn set_r_component(&mut self, r_component: Option<&str>) -> Result<()> {
         if let Some(rc) = r_component {
             let (rc, s) = parse_rq_component(rc)?;
@@ -284,7 +288,7 @@ impl Urn {
     pub fn q_component(&self) -> Option<&str> {
         self.q_component.as_deref()
     }
-    /// Set the q-component (must be a valid q-component and use percent-encoding)
+    /// Set the q-component (must be [a valid q-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding)
     pub fn set_q_component(&mut self, q_component: Option<&str>) -> Result<()> {
         if let Some(qc) = q_component {
             let (qc, s) = parse_rq_component(qc)?;
@@ -302,7 +306,7 @@ impl Urn {
     pub fn f_component(&self) -> Option<&str> {
         self.f_component.as_deref()
     }
-    /// Set the f-component (must be a valid f-component and use percent-encoding)
+    /// Set the f-component (must be [a valid f-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding)
     pub fn set_f_component(&mut self, f_component: Option<&str>) -> Result<()> {
         if let Some(fc) = f_component {
             let (fc, s) = parse_f_component(fc)?;
@@ -344,7 +348,7 @@ impl fmt::Display for Urn {
 impl FromStr for Urn {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
-        Self::parse(s)
+        parse_urn(s)
     }
 }
 
@@ -396,7 +400,7 @@ impl UrnBuilder {
         self.f_component = Some(f_component.to_owned());
         self
     }
-    /// Validate the data and create the URN.
+    /// [Validate the data](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and create the URN.
     ///
     /// # Example
     /// ```
@@ -406,12 +410,16 @@ impl UrnBuilder {
     /// # use urn::{Namespace, Urn, UrnBuilder};
     /// # #[cfg(feature = "std")]
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = UrnBuilder::new(Namespace::Example, "1234:5678");
-    /// assert_eq!(builder.build()?.to_string(), "urn:example:1234:5678".to_owned());
-    /// Ok(())
+    /// let urn = UrnBuilder::new(Namespace::Example, "1234:5678").build()?;
+    /// assert_eq!(urn.to_string(), "urn:example:1234:5678".to_owned());
+    /// assert_eq!(urn, "urn:example:1234:5678".parse()?); // Using std::str::parse
+    /// # Ok(())
     /// # }
     /// ```
     pub fn build(self) -> Result<Urn> {
+        if matches!(&self.namespace, Namespace::Unknown(s) if !is_valid_nid(s)) {
+            return Err(Error::InvalidNid);
+        }
         let (nss, s) = parse_nss(&self.nss)?;
         if !s.is_empty() {
             return Err(Error::InvalidNss);
@@ -440,18 +448,23 @@ mod tests {
     #[test]
     fn it_works() {
         assert_eq!(
-            Urn::parse("urn:nbn:de:bvb:19-146642").unwrap(),
+            "urn:nbn:de:bvb:19-146642".parse::<Urn>().unwrap(),
             UrnBuilder::new(Namespace::Nbn, "de:bvb:19-146642")
                 .build()
                 .unwrap()
         );
         assert_eq!(
-            Urn::parse("urn:nbn:de:bvb:19-146642").unwrap().to_string(),
+            "urn:nbn:de:bvb:19-146642"
+                .parse::<Urn>()
+                .unwrap()
+                .to_string(),
             "urn:nbn:de:bvb:19-146642"
         );
 
         assert_eq!(
-            Urn::parse("urn:example:foo-bar-baz-qux?+CCResolve:cc=uk#test").unwrap(),
+            "urn:example:foo-bar-baz-qux?+CCResolve:cc=uk#test"
+                .parse::<Urn>()
+                .unwrap(),
             UrnBuilder::new(Namespace::Example, "foo-bar-baz-qux")
                 .r_component("CCResolve:cc=uk")
                 .f_component("test")
@@ -459,36 +472,46 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(
-            Urn::parse("urn:example:foo-bar-baz-qux?+CCResolve:cc=uk#test").unwrap().to_string(),
+            "urn:example:foo-bar-baz-qux?+CCResolve:cc=uk#test"
+                .parse::<Urn>()
+                .unwrap()
+                .to_string(),
             "urn:example:foo-bar-baz-qux?+CCResolve:cc=uk#test",
         );
 
         assert_eq!(
-            Urn::parse(
-                "urn:example:weather?=op=map&lat=39.56&lon=-104.85&datetime=1969-07-21T02:56:15Z"
-            )
-            .unwrap(),
+            "urn:example:weather?=op=map&lat=39.56&lon=-104.85&datetime=1969-07-21T02:56:15Z"
+                .parse::<Urn>()
+                .unwrap(),
             UrnBuilder::new(Namespace::Example, "weather")
                 .q_component("op=map&lat=39.56&lon=-104.85&datetime=1969-07-21T02:56:15Z")
                 .build()
                 .unwrap()
         );
         assert_eq!(
-            Urn::parse(
-                "urn:example:weather?=op=map&lat=39.56&lon=-104.85&datetime=1969-07-21T02:56:15Z"
-            ).unwrap().to_string(),
+            "urn:example:weather?=op=map&lat=39.56&lon=-104.85&datetime=1969-07-21T02:56:15Z"
+                .parse::<Urn>()
+                .unwrap()
+                .to_string(),
             "urn:example:weather?=op=map&lat=39.56&lon=-104.85&datetime=1969-07-21T02:56:15Z"
         );
 
         assert_eq!(
-            Urn::parse("uRn:eXaMpLe:%3d%3a?=aoiwnfuafo").unwrap(),
+            "uRn:eXaMpLe:%3d%3a?=aoiwnfuafo".parse::<Urn>().unwrap(),
             UrnBuilder::new(Namespace::Example, "%3D%3a")
                 .build()
                 .unwrap()
         );
         assert_eq!(
-            Urn::parse("uRn:eXaMpLe:%3d%3a?=aoiwnfuafo").unwrap().to_string(),
+            "uRn:eXaMpLe:%3d%3a?=aoiwnfuafo"
+                .parse::<Urn>()
+                .unwrap()
+                .to_string(),
             "urn:example:%3D%3A?=aoiwnfuafo",
         );
+
+        assert_eq!("urn:-example:abcd".parse::<Urn>(), Err(Error::InvalidNid));
+        assert_eq!("urn:example:/abcd".parse::<Urn>(), Err(Error::InvalidNss));
+        assert_eq!("urn:a:abcd".parse::<Urn>(), Err(Error::InvalidNid));
     }
 }

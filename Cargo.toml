@@ -1,6 +1,6 @@
 [package]
 name = "urn"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2018"
 readme = "README.md"
 authors = ["pavlukivan <chayleaf@protonmail.com>"]
@@ -17,7 +17,7 @@ displaydoc = { version = "0.2.3", default-features = false }
 
 [build-dependencies]
 reqwest = { version = "0.11.4", features = ["blocking"] }
-csv = "1.1.6"
+kuchiki = "0.8.1"
 
 [features]
 std = ["displaydoc/std"]
