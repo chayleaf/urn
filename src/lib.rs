@@ -9,7 +9,7 @@
 //! # #[cfg(feature = "std")]
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let urn = UrnBuilder::new(Namespace::Example, "1234:5678").build()?;
-//! assert_eq!(urn.to_string(), "urn:example:1234:5678".to_owned());
+//! assert_eq!(urn.to_string(), "urn:example:1234:5678");
 //! assert_eq!(urn, "urn:example:1234:5678".parse()?); // Using std::str::parse
 //! # Ok(())
 //! # }
@@ -411,7 +411,7 @@ impl UrnBuilder {
     /// # #[cfg(feature = "std")]
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let urn = UrnBuilder::new(Namespace::Example, "1234:5678").build()?;
-    /// assert_eq!(urn.to_string(), "urn:example:1234:5678".to_owned());
+    /// assert_eq!(urn.to_string(), "urn:example:1234:5678");
     /// assert_eq!(urn, "urn:example:1234:5678".parse()?); // Using std::str::parse
     /// # Ok(())
     /// # }
