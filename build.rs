@@ -1,4 +1,5 @@
-use std::{env, fs::File, io::prelude::*, path::PathBuf};
+use kuchiki::traits::*;
+use std::{env, fs::File, io::prelude::*, path::PathBuf, str};
 
 fn dash_to_pascal(s: &str) -> String {
     let ret = s
@@ -19,68 +20,99 @@ fn dash_to_pascal(s: &str) -> String {
     }
 }
 
+struct Namespace {
+    nid: String,
+    templates: Vec<String>,
+    reference: Vec<String>,
+}
+
+// table-urn-namespaces-1
+// table-urn-namespaces-2
+fn list(html: &str, table_selector: &str) -> impl Iterator<Item = Namespace> {
+    let html = kuchiki::parse_html().one(html);
+    let table = html.select_first(table_selector).unwrap();
+    let tbody = table.as_node().select_first("tbody").unwrap();
+    tbody.as_node().select("tr").unwrap().map(
+            |row| {
+                let mut td = row.as_node().select("td").unwrap();
+                let nid = td.next().unwrap().as_node().text_contents();
+                let mut get_links = || td.next().unwrap().as_node().select("a").unwrap().map(|link| {
+                    let link = link.as_node();
+                    let url = link.as_element().unwrap().attributes.borrow().get("href").unwrap().to_owned();
+                    let url = if url.starts_with('#') {
+                        format!("https://www.iana.org/assignments/urn-namespaces/urn-namespaces.xhtml{}", url)
+                    } else {
+                        url
+                    };
+                    format!("[{}]({})", link.text_contents(), url)
+                }).collect::<Vec<String>>();
+                let templates = get_links();
+                let reference = get_links();
+                Namespace {
+                    nid,
+                    templates,
+                    reference,
+                }
+            }
+        )
+}
+
+fn list_formal(html: &str) -> impl Iterator<Item = Namespace> {
+    list(html, "#table-urn-namespaces-1")
+}
+
+fn list_informal(html: &str) -> impl Iterator<Item = Namespace> {
+    list(html, "#table-urn-namespaces-2")
+}
+
 fn main() {
-    let url1 = "https://www.iana.org/assignments/urn-namespaces/urn-namespaces-1.csv";
-    let url2 = "https://www.iana.org/assignments/urn-namespaces/urn-namespaces-2.csv";
-    let body1 = reqwest::blocking::get(url1)
+    let url = "https://www.iana.org/assignments/urn-namespaces/urn-namespaces.xhtml";
+    let body = reqwest::blocking::get(url)
         .ok()
         .filter(|resp| resp.status().is_success())
         .and_then(move |resp| resp.bytes().ok().map(|x| x.to_vec()))
-        .unwrap_or_else(|| include_bytes!("urn-namespaces-1.csv").to_vec());
-    let body2 = reqwest::blocking::get(url2)
-        .ok()
-        .filter(|resp| resp.status().is_success())
-        .and_then(move |resp| resp.bytes().ok().map(|x| x.to_vec()))
-        .unwrap_or_else(|| include_bytes!("urn-namespaces-2.csv").to_vec());
+        .unwrap_or_else(|| include_bytes!("urn-namespaces.xhtml").to_vec());
+    let body = str::from_utf8(&body).unwrap();
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     let mut file = File::create(out_path.join("generated.rs")).unwrap();
     writeln!(file, "#[non_exhaustive]").unwrap();
     writeln!(file, "#[derive(Debug, Eq, PartialEq, Clone, Hash)]").unwrap();
     writeln!(file, "/// A URN namespace identifier").unwrap();
     writeln!(file, "pub enum Namespace {{").unwrap();
-    let mut rdr = csv::Reader::from_reader(body1.as_slice());
-    for result in rdr.records() {
-        let record = result.unwrap();
+    for record in list_formal(body) {
         let mut comment = Vec::new();
-        comment.push(format!("Formal namespace: {}", record.get(0).unwrap()));
-        match record.get(1) {
-            Some(template) if !template.is_empty() => {
-                comment.push(format!("Template: {}", template));
-            }
-            _ => {}
+        comment.push(format!("Formal namespace: `{}`", record.nid));
+        if !record.templates.is_empty() {
+            comment.push(format!("Template: {}", record.templates.join("; ")));
         }
-        match record.get(2) {
-            Some(reference) if !reference.is_empty() => {
-                comment.push(format!("Reference: {}", reference));
-            }
-            _ => {}
+        if !record.reference.is_empty() {
+            comment.push(format!("Reference: {}", record.reference.join("; ")));
         }
-        writeln!(file, "    /// {}.", comment.join("; ")).unwrap();
-        writeln!(file, "    /// See https://www.iana.org/assignments/urn-namespaces/urn-namespaces.xhtml for more info.").unwrap();
-        writeln!(file, "    {},", dash_to_pascal(record.get(0).unwrap())).unwrap();
+        for c in comment {
+            writeln!(file, "    /// {}.", c).unwrap();
+        }
+        writeln!(file, "    /// Sourced from [the IANA namespace registry](https://www.iana.org/assignments/urn-namespaces/urn-namespaces.xhtml).").unwrap();
+        writeln!(file, "    {},", dash_to_pascal(&record.nid)).unwrap();
     }
-    let mut rdr = csv::Reader::from_reader(body2.as_slice());
-    for result in rdr.records() {
-        let record = result.unwrap();
+    for record in list_informal(body) {
         let mut comment = Vec::new();
-        comment.push(format!("Informal namespace: {}", record.get(0).unwrap()));
-        match record.get(1) {
-            Some(template) if !template.is_empty() => {
-                comment.push(format!("Template: {}", template));
-            }
-            _ => {}
+        comment.push(format!("Informal namespace: `{}`", record.nid));
+        if !record.templates.is_empty() {
+            comment.push(format!("Template: {}", record.templates.join("; ")));
         }
-        match record.get(2) {
-            Some(reference) if !reference.is_empty() => {
-                comment.push(format!("Reference: {}", reference));
-            }
-            _ => {}
+        if !record.reference.is_empty() {
+            comment.push(format!("Reference: {}", record.reference.join("; ")));
         }
-        writeln!(file, "    /// {}.", comment.join("; ")).unwrap();
-        writeln!(file, "    /// See https://www.iana.org/assignments/urn-namespaces/urn-namespaces.xhtml for more info.").unwrap();
-        writeln!(file, "    {},", dash_to_pascal(record.get(0).unwrap())).unwrap();
+        for c in comment {
+            writeln!(file, "    /// {}.", c).unwrap();
+        }
+        writeln!(file, "    /// Sourced from [the IANA namespace registry](https://www.iana.org/assignments/urn-namespaces/urn-namespaces.xhtml).").unwrap();
+        writeln!(file, "    {},", dash_to_pascal(&record.nid)).unwrap();
     }
-    writeln!(file, "    Unknown(String),").unwrap();
+    writeln!(file, "    Unknown(").unwrap();
+    writeln!(file, "        /// The unknown NID. Must follow the [NID syntax rules](https://datatracker.ietf.org/doc/html/rfc8141#section-2)!").unwrap();
+    writeln!(file, "        String,").unwrap();
+    writeln!(file, "    ),").unwrap();
     writeln!(file, "}}").unwrap();
     writeln!(file).unwrap();
     writeln!(file, "impl Namespace {{").unwrap();
@@ -91,13 +123,11 @@ fn main() {
     .unwrap();
     writeln!(file, "    pub fn is_formal(&self) -> bool {{").unwrap();
     writeln!(file, "        matches!(self,").unwrap();
-    let mut rdr = csv::Reader::from_reader(body1.as_slice());
     writeln!(
         file,
         "{}",
-        rdr.records()
-            .filter_map(Result::ok)
-            .map(|x| format!("Self::{}", dash_to_pascal(x.get(0).unwrap())))
+        list_formal(body)
+            .map(|x| format!("Self::{}", dash_to_pascal(&x.nid)))
             .collect::<Vec<_>>()
             .join(" |\n            ")
     )
@@ -112,13 +142,11 @@ fn main() {
     .unwrap();
     writeln!(file, "    pub fn is_informal(&self) -> bool {{").unwrap();
     writeln!(file, "        matches!(self,").unwrap();
-    let mut rdr = csv::Reader::from_reader(body2.as_slice());
     writeln!(
         file,
         "{}",
-        rdr.records()
-            .filter_map(Result::ok)
-            .map(|x| format!("Self::{}", dash_to_pascal(x.get(0).unwrap())))
+        list_informal(body)
+            .map(|x| format!("Self::{}", dash_to_pascal(&x.nid)))
             .collect::<Vec<_>>()
             .join(" |\n            ")
     )
@@ -128,27 +156,21 @@ fn main() {
     writeln!(file).unwrap();
     writeln!(file, "    pub fn new(id: &str) -> Result<Self> {{").unwrap();
     writeln!(file, "        match id.to_ascii_lowercase().as_str() {{").unwrap();
-    let mut rdr = csv::Reader::from_reader(body1.as_slice());
-    for result in rdr.records() {
-        let record = result.unwrap();
-        let nid = record.get(0).unwrap();
+    for record in list_formal(body) {
         writeln!(
             file,
             "            \"{}\" => Ok(Self::{}),",
-            nid,
-            dash_to_pascal(nid),
+            record.nid,
+            dash_to_pascal(&record.nid),
         )
         .unwrap();
     }
-    let mut rdr = csv::Reader::from_reader(body2.as_slice());
-    for result in rdr.records() {
-        let record = result.unwrap();
-        let nid = record.get(0).unwrap();
+    for record in list_informal(body) {
         writeln!(
             file,
             "            \"{}\" => Ok(Self::{}),",
-            nid,
-            dash_to_pascal(nid),
+            record.nid,
+            dash_to_pascal(&record.nid),
         )
         .unwrap();
     }
@@ -163,29 +185,27 @@ fn main() {
     writeln!(file, "}}").unwrap();
     writeln!(file).unwrap();
     writeln!(file, "impl fmt::Display for Namespace {{").unwrap();
-    writeln!(file, "    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> result::Result<(), fmt::Error> {{").unwrap();
+    writeln!(
+        file,
+        "    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> result::Result<(), fmt::Error> {{"
+    )
+    .unwrap();
     writeln!(file, "        write!(f, \"{{}}\", match self {{").unwrap();
-    let mut rdr = csv::Reader::from_reader(body1.as_slice());
-    for result in rdr.records() {
-        let record = result.unwrap();
-        let nid = record.get(0).unwrap();
+    for record in list_formal(body) {
         writeln!(
             file,
             "            Self::{} => \"{}\",",
-            dash_to_pascal(nid),
-            nid,
+            dash_to_pascal(&record.nid),
+            record.nid,
         )
         .unwrap();
     }
-    let mut rdr = csv::Reader::from_reader(body2.as_slice());
-    for result in rdr.records() {
-        let record = result.unwrap();
-        let nid = record.get(0).unwrap();
+    for record in list_informal(body) {
         writeln!(
             file,
             "            Self::{} => \"{}\",",
-            dash_to_pascal(nid),
-            nid,
+            dash_to_pascal(&record.nid),
+            record.nid,
         )
         .unwrap();
     }
