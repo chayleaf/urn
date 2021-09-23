@@ -6,7 +6,7 @@ A Rust crate for handling [URNs](https://datatracker.ietf.org/doc/html/rfc8141).
 
 ## Changelog
 
-0.1.0 - initial release
-0.1.1 - add FromStr impl
-0.2.0 - remove Urn::parse function in favor of FromStr, improve docs
-0.2.1 - remove files left over from 0.1
+- 0.1.0 - initial release
+- 0.1.1 - add FromStr impl
+- 0.2.0 - remove Urn::parse function in favor of FromStr, improve docs
+- 0.2.1 - remove files left over from 0.1
