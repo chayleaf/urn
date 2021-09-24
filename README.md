@@ -11,3 +11,10 @@ A Rust crate for handling [URNs](https://datatracker.ietf.org/doc/html/rfc8141).
 - 0.2.0 - remove Urn::parse function in favor of FromStr, improve docs
 - 0.2.1 - remove files left over from 0.1
 - 0.3.0 - major implementation changes, remove `Namespace` (thanks to u/chris-morgan for help)
+
+## License
+
+TL;DR do whatever you want.
+
+Licensed under either the [BSD Zero Clause License](LICENSE-0BSD) (https://opensource.org/licenses/0BSD), the [Apache 2.0 License](LICENSE-APACHE) (http://www.apache.org/licenses/LICENSE-2.0) or the [MIT License](LICENSE-MIT) (http://opensource.org/licenses/MIT), at your choice.
+
