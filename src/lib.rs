@@ -93,7 +93,7 @@ fn parse_encoded(s: &mut Cow<str>, start: usize, kind: PEncoded) -> usize {
     let mut it = start..s.len();
     while let Some(i) = it.next() {
         match (kind, s.bytes().nth(i).unwrap() as char) {
-            (PEncoded::FComponent, '?') if i == start => {}
+            (PEncoded::FComponent, '?') => {}
             // ?= terminates the r-component despite otherwise being a valid part of r-component
             (PEncoded::RComponent, '?')
                 if i != start
@@ -102,8 +102,7 @@ fn parse_encoded(s: &mut Cow<str>, start: usize, kind: PEncoded) -> usize {
                         .map(|b| b as char != '=')
                         .unwrap_or(true) => {}
             (PEncoded::QComponent, '?') if i != start => {}
-            (PEncoded::FComponent, '?') if i != start => {}
-            (PEncoded::FComponent, '/') if i == start => {}
+            (PEncoded::FComponent, '/') => {}
             (_, '/') if i != start => {}
             (
                 _,
@@ -223,7 +222,7 @@ fn parse_urn(mut s: Cow<str>) -> Result<Urn> {
 }
 
 /// A URN validation error.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     /// The URN has an invalid scheme.
     InvalidScheme,
@@ -264,7 +263,7 @@ impl std::error::Error for Error {}
 /// only taking the NID and NSS into account! If you need exact equivalence checks, consider
 /// comparing using `Urn::as_str()` as the key. Some namespaces may define additional lexical
 /// equivalence checks, these aren't accounted for in this implementation.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Urn {
     // Entire URN string
     urn: String,
