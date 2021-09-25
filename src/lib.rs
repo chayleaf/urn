@@ -9,7 +9,7 @@
 //! # #[cfg(feature = "std")]
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let urn = UrnBuilder::new("example", "1234:5678").build()?;
-//! assert_eq!(urn.to_string(), "urn:example:1234:5678");
+//! assert_eq!(urn.as_str(), "urn:example:1234:5678");
 //! assert_eq!(urn, "urn:example:1234:5678".parse()?); // Using std::str::parse
 //! # Ok(())
 //! # }
@@ -508,6 +508,21 @@ impl TryFrom<String> for Urn {
 }
 
 /// A struct used for constructing URNs.
+///
+/// # Example
+/// ```
+/// # #[cfg(not(feature = "std"))]
+/// # fn main() { }
+/// # #[cfg(feature = "std")]
+/// # use urn::{Urn, UrnBuilder};
+/// # #[cfg(feature = "std")]
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let urn = UrnBuilder::new("example", "1234:5678").build()?;
+/// assert_eq!(urn.as_str(), "urn:example:1234:5678");
+/// assert_eq!(urn, "urn:example:1234:5678".parse()?); // Using std::str::parse
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug)]
 pub struct UrnBuilder {
     nid: String,
@@ -554,21 +569,6 @@ impl UrnBuilder {
         self
     }
     /// [Validate the data](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and create the URN.
-    ///
-    /// # Example
-    /// ```
-    /// # #[cfg(not(feature = "std"))]
-    /// # fn main() { }
-    /// # #[cfg(feature = "std")]
-    /// # use urn::{Urn, UrnBuilder};
-    /// # #[cfg(feature = "std")]
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let urn = UrnBuilder::new("example", "1234:5678").build()?;
-    /// assert_eq!(urn.to_string(), "urn:example:1234:5678");
-    /// assert_eq!(urn, "urn:example:1234:5678".parse()?); // Using std::str::parse
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn build(self) -> Result<Urn> {
         let mut s = "urn:".to_owned();
         s.push_str(&self.nid);

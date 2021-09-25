@@ -2,7 +2,9 @@
 
 # URN
 
-A Rust crate for handling [URNs](https://datatracker.ietf.org/doc/html/rfc8141). Parsing and comparison is done according to the spec (meaning only part of the URN is used for equality checks). `no_std` support is available if you disable the default "std" feature. `alloc` is needed, but the `Urn` type is a wrapper around `String` and should only use a single allocation (but I haven't checked). You can even construct a `Urn` from your own `String` by using `TryFrom<String>`, that way it shouldn't allocate at all.
+A Rust crate for handling [URNs](https://datatracker.ietf.org/doc/html/rfc8141). Parsing and comparison is done according to the spec (meaning only part of the URN is used for equality checks). Some RFCs define per-namespace lexical equivalence rules, those aren't taken into account here. `no_std` support is available if you disable the default "std" feature. `alloc` is needed, but the `Urn` type is a wrapper around `String` and should only use a single allocation (but I haven't checked). You can even construct a `Urn` from your own `String` by using `TryFrom<String>`, that way it shouldn't allocate at all.
+
+URNs have a surprising amount of obscure details to the point I'm not sure at this point if other URN parsers can be trusted! Granted, there's very little of them because almost nobody really needs URNs...
 
 ## Changelog
 
