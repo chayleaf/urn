@@ -11,6 +11,7 @@ A Rust crate for handling [URNs](https://datatracker.ietf.org/doc/html/rfc8141).
 - 0.2.0 - remove Urn::parse function in favor of FromStr, improve docs
 - 0.2.1 - remove files left over from 0.1
 - 0.3.0 - major implementation changes, remove `Namespace` (thanks to u/chris-morgan for help)
+- 0.3.1 - fix a panic on empty NSS and add `?=` terminator to r-component (both `?` and `=` can be part of r-component, but together they terminate it)
 
 ## License
 

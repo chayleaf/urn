@@ -80,30 +80,46 @@ fn is_valid_nid(s: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || (b as char) == '-')
 }
 
+#[derive(Copy, Clone, Eq, PartialEq)]
+enum PEncoded {
+    Nss,
+    RComponent,
+    QComponent,
+    FComponent,
+}
+
 /// Must be a valid percent-encoded string already. Returns the end.
-fn parse_encoded(
-    s: &mut Cow<str>,
-    start: usize,
-    can_start_with_slash: bool,
-    with_qmark: bool,
-) -> usize {
+fn parse_encoded(s: &mut Cow<str>, start: usize, kind: PEncoded) -> usize {
     let mut it = start..s.len();
     while let Some(i) = it.next() {
-        match s.bytes().nth(i).unwrap() as char {
-            '?' if with_qmark => {}
-            '/' if i == start && can_start_with_slash => {}
-            '/' if i != start => {}
-            '-' | '.' | '_' | '~' | '!' | '$' | '&' | '\'' | '(' | ')' | '*' | '+' | ',' | ';'
-            | '=' | ':' | '@' => {}
-            c if c.is_ascii_alphanumeric() => {}
-            '%' if i + 2 < s.bytes().len()
-                && s.bytes().skip(i + 1).take(2).all(|c| c.is_ascii_hexdigit()) =>
+        match (kind, s.bytes().nth(i).unwrap() as char) {
+            (PEncoded::FComponent, '?') if i == start => {}
+            // ?= terminates the r-component despite otherwise being a valid part of r-component
+            (PEncoded::RComponent, '?')
+                if i != start
+                    && s.bytes()
+                        .nth(i + 1)
+                        .map(|b| b as char != '=')
+                        .unwrap_or(true) => {}
+            (PEncoded::QComponent, '?') if i != start => {}
+            (PEncoded::FComponent, '?') if i != start => {}
+            (PEncoded::FComponent, '/') if i == start => {}
+            (_, '/') if i != start => {}
+            (
+                _,
+                '-' | '.' | '_' | '~' | '!' | '$' | '&' | '\'' | '(' | ')' | '*' | '+' | ',' | ';'
+                | '=' | ':' | '@',
+            ) => {}
+            (_, c) if c.is_ascii_alphanumeric() => {}
+            (_, '%')
+                if i + 2 < s.bytes().len()
+                    && s.bytes().skip(i + 1).take(2).all(|c| c.is_ascii_hexdigit()) =>
             {
                 replace_case::<_, { Case::Upper as u8 }>(s, i + 1..i + 3);
                 it.next();
                 it.next();
             }
-            _ => return i,
+            (_, _) => return i,
         }
     }
     s.len()
@@ -111,17 +127,22 @@ fn parse_encoded(
 
 /// Returns the end
 fn parse_nss(s: &mut Cow<str>, start: usize) -> usize {
-    parse_encoded(s, start, false, false)
+    parse_encoded(s, start, PEncoded::Nss)
 }
 
 /// Returns the end
-fn parse_rq_component(s: &mut Cow<str>, start: usize) -> usize {
-    parse_encoded(s, start, false, true)
+fn parse_r_component(s: &mut Cow<str>, start: usize) -> usize {
+    parse_encoded(s, start, PEncoded::RComponent)
+}
+
+/// Returns the end
+fn parse_q_component(s: &mut Cow<str>, start: usize) -> usize {
+    parse_encoded(s, start, PEncoded::QComponent)
 }
 
 /// Returns the end
 fn parse_f_component(s: &mut Cow<str>, start: usize) -> usize {
-    parse_encoded(s, start, true, true)
+    parse_encoded(s, start, PEncoded::FComponent)
 }
 
 fn parse_urn(mut s: Cow<str>) -> Result<Urn> {
@@ -154,13 +175,16 @@ fn parse_urn(mut s: Cow<str>) -> Result<Urn> {
 
     let nss_start = nid_end + 1;
     let nss_end = parse_nss(&mut s, nss_start);
+    if nss_end == nss_start {
+        return Err(Error::InvalidNss);
+    }
 
     let mut end = nss_end;
     let mut leftover_error = Error::InvalidNss;
 
     let r_component_len = if s[end..].starts_with("?+") {
         let rc_start = end + 2;
-        let rc_end = parse_rq_component(&mut s, rc_start);
+        let rc_end = parse_r_component(&mut s, rc_start);
         end = rc_end;
         leftover_error = Error::InvalidRComponent;
         Some(NonZeroUsize::new(rc_end - rc_start).ok_or(Error::InvalidRComponent)?)
@@ -170,7 +194,7 @@ fn parse_urn(mut s: Cow<str>) -> Result<Urn> {
 
     let q_component_len = if s[end..].starts_with("?=") {
         let qc_start = end + 2;
-        let qc_end = parse_rq_component(&mut s, qc_start);
+        let qc_end = parse_q_component(&mut s, qc_start);
         end = qc_end;
         leftover_error = Error::InvalidQComponent;
         Some(NonZeroUsize::new(qc_end - qc_start).ok_or(Error::InvalidQComponent)?)
@@ -324,8 +348,8 @@ impl Urn {
     }
     /// Set the namespace-specific string (must be [a valid NSS](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding).
     pub fn set_nss(&mut self, nss: &str) -> Result<()> {
-        let mut nss = nss.into();
-        if parse_nss(&mut nss, 0) != nss.len() {
+        let mut nss = Cow::from(nss);
+        if nss.is_empty() || parse_nss(&mut nss, 0) != nss.len() {
             return Err(Error::InvalidNss);
         }
         self.urn.replace_range(self.nss_range(), &nss);
@@ -355,7 +379,7 @@ impl Urn {
             });
         if let Some(rc) = r_component {
             let mut rc = Cow::from(rc);
-            if rc.is_empty() || parse_rq_component(&mut rc, 0) != rc.len() {
+            if rc.is_empty() || parse_r_component(&mut rc, 0) != rc.len() {
                 return Err(Error::InvalidRComponent);
             }
             self.urn.replace_range(range, &("?+".to_owned() + &rc));
@@ -388,7 +412,7 @@ impl Urn {
             });
         if let Some(qc) = q_component {
             let mut qc = Cow::from(qc);
-            if qc.is_empty() || parse_rq_component(&mut qc, 0) != qc.len() {
+            if qc.is_empty() || parse_q_component(&mut qc, 0) != qc.len() {
                 return Err(Error::InvalidQComponent);
             }
             self.urn.replace_range(range, &("?=".to_owned() + &qc));
@@ -663,9 +687,22 @@ mod tests {
         assert_eq!("urn:example:/abcd".parse::<Urn>(), Err(Error::InvalidNss));
         assert_eq!("urn:a:abcd".parse::<Urn>(), Err(Error::InvalidNid));
         assert_eq!("urn:example".parse::<Urn>(), Err(Error::InvalidNss));
+        assert_eq!("urn:example:".parse::<Urn>(), Err(Error::InvalidNss));
         assert_eq!("urn:example:%".parse::<Urn>(), Err(Error::InvalidNss));
         assert_eq!("urn:example:%a".parse::<Urn>(), Err(Error::InvalidNss));
         assert_eq!("urn:example:%a_".parse::<Urn>(), Err(Error::InvalidNss));
+        assert_eq!(
+            "urn:example:%a0?+".parse::<Urn>(),
+            Err(Error::InvalidRComponent)
+        );
+        assert_eq!(
+            "urn:example:%a0?+%a0?=".parse::<Urn>(),
+            Err(Error::InvalidQComponent)
+        );
+        assert_eq!(
+            "urn:example:%a0?+%a0?=a".parse::<Urn>().unwrap().r_component().unwrap(),
+            "%A0",
+        );
 
         let mut urn = "urn:example:test".parse::<Urn>().unwrap();
         urn.set_f_component(Some("f-component")).unwrap();
