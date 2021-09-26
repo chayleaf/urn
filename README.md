@@ -15,6 +15,7 @@ URNs have a surprising amount of obscure details to the point I'm not sure at th
 - 0.3.0 - major implementation changes, remove `Namespace` (thanks to u/chris-morgan for help)
 - 0.3.1 - fix a panic on empty NSS and add `?=` terminator to r-component (both `?` and `=` can be part of r-component, but together they terminate it)
 - 0.3.2 - add `Clone` impl for `Urn`
+- 0.3.3 - more precise builder errors; reduce memory footprint by up to 15 bytes (but increase it by 5 bytes on 16-bit platforms)
 
 ## License
 
