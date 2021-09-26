@@ -11,6 +11,7 @@
 //! let urn = UrnBuilder::new("example", "1234:5678").build()?;
 //! assert_eq!(urn.as_str(), "urn:example:1234:5678");
 //! assert_eq!(urn, "urn:example:1234:5678".parse()?); // Using std::str::parse
+//! assert_eq!(urn.nss(), "1234:5678");
 //! # Ok(())
 //! # }
 //! ```
@@ -24,9 +25,9 @@ use alloc::{
     string::String,
 };
 use core::{
-    convert::TryFrom,
+    convert::{TryFrom, TryInto},
     hash::{self, Hash},
-    num::NonZeroUsize,
+    num::{NonZeroU32, NonZeroU8},
     ops::{Deref, Range, RangeBounds},
     result,
     slice::SliceIndex,
@@ -186,7 +187,13 @@ fn parse_urn(mut s: Cow<str>) -> Result<Urn> {
         let rc_end = parse_r_component(&mut s, rc_start);
         end = rc_end;
         leftover_error = Error::InvalidRComponent;
-        Some(NonZeroUsize::new(rc_end - rc_start).ok_or(Error::InvalidRComponent)?)
+        Some(
+            (rc_end - rc_start)
+                .try_into()
+                .ok()
+                .and_then(NonZeroU32::new)
+                .ok_or(Error::InvalidRComponent)?,
+        )
     } else {
         None
     };
@@ -196,7 +203,13 @@ fn parse_urn(mut s: Cow<str>) -> Result<Urn> {
         let qc_end = parse_q_component(&mut s, qc_start);
         end = qc_end;
         leftover_error = Error::InvalidQComponent;
-        Some(NonZeroUsize::new(qc_end - qc_start).ok_or(Error::InvalidQComponent)?)
+        Some(
+            (qc_end - qc_start)
+                .try_into()
+                .ok()
+                .and_then(NonZeroU32::new)
+                .ok_or(Error::InvalidQComponent)?,
+        )
     } else {
         None
     };
@@ -214,8 +227,14 @@ fn parse_urn(mut s: Cow<str>) -> Result<Urn> {
 
     Ok(Urn {
         urn: s.into_owned(),
-        nid_len: NonZeroUsize::new(nid_end - nid_start).unwrap(),
-        nss_len: NonZeroUsize::new(nss_end - nss_start).unwrap(),
+        // We already know NID will fit into 32 bytes
+        nid_len: NonZeroU8::new((nid_end - nid_start).try_into().unwrap()).unwrap(),
+        nss_len: NonZeroU32::new(
+            (nss_end - nss_start)
+                .try_into()
+                .map_err(|_| Error::InvalidNss)?,
+        )
+        .unwrap(),
         r_component_len,
         q_component_len,
     })
@@ -267,29 +286,29 @@ impl std::error::Error for Error {}
 pub struct Urn {
     // Entire URN string
     urn: String,
-    nid_len: NonZeroUsize,
-    nss_len: NonZeroUsize,
-    r_component_len: Option<NonZeroUsize>,
-    q_component_len: Option<NonZeroUsize>,
+    nid_len: NonZeroU8,
+    nss_len: NonZeroU32,
+    r_component_len: Option<NonZeroU32>,
+    q_component_len: Option<NonZeroU32>,
 }
 
 impl Urn {
     fn nid_range(&self) -> Range<usize> {
         // urn:<nid>
-        4..4 + self.nid_len.get()
+        4..4 + self.nid_len.get() as usize
     }
 
     fn nss_range(&self) -> Range<usize> {
         // urn:<nid>:<nss>
         let start = self.nid_range().end + 1;
-        start..start + self.nss_len.get()
+        start..start + self.nss_len.get() as usize
     }
 
     fn r_component_range(&self) -> Option<Range<usize>> {
         self.r_component_len.map(|r_component_len| {
             // urn:<nid>:<nss>[?+<r-component>]
             let start = self.nss_range().end + 2;
-            start..start + r_component_len.get()
+            start..start + r_component_len.get() as usize
         })
     }
 
@@ -301,7 +320,7 @@ impl Urn {
                 .unwrap_or_else(|| self.nss_range())
                 .end
                 + 2;
-            start..start + q_component_len.get()
+            start..start + q_component_len.get() as usize
         })
     }
 
@@ -336,7 +355,8 @@ impl Urn {
         let mut nid = nid.into();
         replace_case::<_, { Case::Lower as u8 }>(&mut nid, ..);
         self.urn.replace_range(self.nid_range(), &nid);
-        self.nid_len = NonZeroUsize::new(nid.len()).unwrap();
+        // We already know NID will fit into 32 bytes
+        self.nid_len = NonZeroU8::new(nid.len().try_into().unwrap()).unwrap();
         Ok(())
     }
     /// NSS (Namespace-specific string) identifying the resource.
@@ -352,7 +372,8 @@ impl Urn {
             return Err(Error::InvalidNss);
         }
         self.urn.replace_range(self.nss_range(), &nss);
-        self.nss_len = NonZeroUsize::new(nss.len()).unwrap();
+        self.nss_len =
+            NonZeroU32::new(nss.len().try_into().map_err(|_| Error::InvalidNss)?).unwrap();
         Ok(())
     }
     /// r-component, following the `?+` character sequence, to be used for passing parameters
@@ -381,8 +402,9 @@ impl Urn {
             if rc.is_empty() || parse_r_component(&mut rc, 0) != rc.len() {
                 return Err(Error::InvalidRComponent);
             }
+            let r_component_len = rc.len().try_into().map_err(|_| Error::InvalidRComponent)?;
             self.urn.replace_range(range, &("?+".to_owned() + &rc));
-            self.r_component_len = Some(NonZeroUsize::new(rc.len()).unwrap());
+            self.r_component_len = Some(NonZeroU32::new(r_component_len).unwrap());
         } else {
             self.urn.replace_range(range, "");
             self.r_component_len = None;
@@ -414,8 +436,9 @@ impl Urn {
             if qc.is_empty() || parse_q_component(&mut qc, 0) != qc.len() {
                 return Err(Error::InvalidQComponent);
             }
+            let q_component_len = qc.len().try_into().map_err(|_| Error::InvalidRComponent)?;
             self.urn.replace_range(range, &("?=".to_owned() + &qc));
-            self.q_component_len = Some(NonZeroUsize::new(qc.len()).unwrap());
+            self.q_component_len = Some(NonZeroU32::new(q_component_len).unwrap());
         } else {
             self.urn.replace_range(range, "");
             self.q_component_len = None;
@@ -520,6 +543,7 @@ impl TryFrom<String> for Urn {
 /// let urn = UrnBuilder::new("example", "1234:5678").build()?;
 /// assert_eq!(urn.as_str(), "urn:example:1234:5678");
 /// assert_eq!(urn, "urn:example:1234:5678".parse()?); // Using std::str::parse
+/// assert_eq!(urn.nss(), "1234:5678");
 /// # Ok(())
 /// # }
 /// ```
@@ -570,31 +594,75 @@ impl UrnBuilder {
     }
     /// [Validate the data](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and create the URN.
     pub fn build(self) -> Result<Urn> {
-        let mut s = "urn:".to_owned();
-        s.push_str(&self.nid);
-        s.push(':');
-        s.push_str(&self.nss);
-        if let Some(rc) = self.r_component {
-            if !rc.is_empty() {
-                s.push_str("?+");
-                s.push_str(&rc);
-            } else {
+        fn cow_push(c: &mut Cow<str>, s: char) {
+            if let Cow::Owned(c) = c {
+                c.push(s);
+            }
+        }
+        fn cow_push_str(c: &mut Cow<str>, s: &str) {
+            if let Cow::Owned(c) = c {
+                c.push_str(s);
+            }
+        }
+        if !is_valid_nid(&self.nid) {
+            return Err(Error::InvalidNid);
+        }
+        let mut s = Cow::from("urn:".to_owned());
+        cow_push_str(&mut s, &self.nid);
+        cow_push(&mut s, ':');
+        cow_push_str(&mut s, &self.nss);
+        if self.nss.is_empty() || parse_nss(&mut s, 5 + self.nid.len()) != s.len() {
+            return Err(Error::InvalidNss);
+        }
+        if let Some(ref rc) = self.r_component {
+            cow_push_str(&mut s, "?+");
+            let end = s.len();
+            cow_push_str(&mut s, rc);
+            if rc.is_empty() || parse_r_component(&mut s, end) != s.len() {
                 return Err(Error::InvalidRComponent);
             }
         }
-        if let Some(qc) = self.q_component {
-            if !qc.is_empty() {
-                s.push_str("?=");
-                s.push_str(&qc);
-            } else {
+        if let Some(ref qc) = self.q_component {
+            cow_push_str(&mut s, "?+");
+            let end = s.len();
+            cow_push_str(&mut s, qc);
+            if qc.is_empty() || parse_q_component(&mut s, end) != s.len() {
                 return Err(Error::InvalidQComponent);
             }
         }
         if let Some(fc) = self.f_component {
-            s.push('#');
-            s.push_str(&fc);
+            cow_push(&mut s, '#');
+            let end = s.len();
+            cow_push_str(&mut s, &fc);
+            if parse_f_component(&mut s, end) != s.len() {
+                return Err(Error::InvalidFComponent);
+            }
         }
-        s.parse()
+        Ok(Urn {
+            urn: s.into(),
+            // We already know NID will fit into 32 bytes
+            nid_len: NonZeroU8::new(self.nid.len().try_into().unwrap()).unwrap(),
+            nss_len: NonZeroU32::new(self.nss.len().try_into().map_err(|_| Error::InvalidNss)?)
+                .unwrap(),
+            r_component_len: self
+                .r_component
+                .map(|x| {
+                    x.len()
+                        .try_into()
+                        .map(|x| NonZeroU32::new(x).unwrap())
+                        .map_err(|_| Error::InvalidRComponent)
+                })
+                .transpose()?,
+            q_component_len: self
+                .q_component
+                .map(|x| {
+                    x.len()
+                        .try_into()
+                        .map(|x| NonZeroU32::new(x).unwrap())
+                        .map_err(|_| Error::InvalidQComponent)
+                })
+                .transpose()?,
+        })
     }
 }
 
@@ -699,7 +767,11 @@ mod tests {
             Err(Error::InvalidQComponent)
         );
         assert_eq!(
-            "urn:example:%a0?+%a0?=a".parse::<Urn>().unwrap().r_component().unwrap(),
+            "urn:example:%a0?+%a0?=a"
+                .parse::<Urn>()
+                .unwrap()
+                .r_component()
+                .unwrap(),
             "%A0",
         );
 
