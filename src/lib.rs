@@ -16,6 +16,7 @@
 //! # }
 //! ```
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 #[cfg(not(feature = "std"))]
@@ -531,6 +532,7 @@ impl TryFrom<String> for Urn {
 }
 
 #[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 impl<'de> serde::Deserialize<'de> for Urn {
     fn deserialize<D>(de: D) -> result::Result<Self, <D as serde::Deserializer<'de>>::Error>
     where
@@ -541,6 +543,7 @@ impl<'de> serde::Deserialize<'de> for Urn {
 }
 
 #[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 impl serde::Serialize for Urn {
     fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
     where
