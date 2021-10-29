@@ -530,6 +530,26 @@ impl TryFrom<String> for Urn {
     }
 }
 
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Urn {
+    fn deserialize<D>(de: D) -> result::Result<Self, <D as serde::Deserializer<'de>>::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Urn::try_from(String::deserialize(de)?).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Urn {
+    fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self)
+    }
+}
+
 /// A struct used for constructing URNs.
 ///
 /// # Example
