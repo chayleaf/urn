@@ -10,7 +10,9 @@ license = "0BSD OR MIT OR Apache-2.0"
 keywords = ["urn", "uri", "iana", "namespace", "parser"]
 categories = ["parser-implementations", "web-programming", "encoding"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 serde = { version = "1.0", optional = true, default-features = false, features = ["alloc"] }
@@ -18,3 +20,4 @@ serde = { version = "1.0", optional = true, default-features = false, features =
 [features]
 std = []
 default = ["std"]
+
