@@ -1,6 +1,6 @@
 [package]
 name = "urn"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2018"
 readme = "README.md"
 authors = ["pavlukivan <chayleaf@protonmail.com>"]
