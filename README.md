@@ -9,15 +9,15 @@ URNs have a surprising amount of obscure details to the point I'm not sure at th
 ## Changelog
 
 - 0.1.0 - initial release
-- 0.1.1 - add FromStr impl
-- 0.2.0 - remove Urn::parse function in favor of FromStr, improve docs
+- 0.1.1 - add `FromStr` impl
+- 0.2.0 - remove `Urn::parse` function in favor of `FromStr`, improve docs
 - 0.2.1 - remove files left over from 0.1
 - 0.3.0 - major implementation changes, remove `Namespace` (thanks to u/chris-morgan for help)
-- 0.3.1 - fix a panic on empty NSS and add `?=` terminator to r-component (both `?` and `=` can be part of r-component, but together they terminate it)
+- 0.3.1 - fix a panic on empty NSS and add "?=" terminator to r-component (both "?" and "=" can be part of r-component, but together they terminate it)
 - 0.3.2 - add `Clone` impl for `Urn`
 - 0.3.3 - more precise builder errors; reduce memory footprint by up to 15 bytes (but increase it by 5 bytes on 16-bit platforms)
 - 0.3.4 - serde support by @callym
-- 0.4.0 - UrnBuilder::namespace -> UrnBuilder::nid
+- 0.4.0 - `UrnBuilder::namespace` -> `UrnBuilder::nid`
 
 ## License
 
