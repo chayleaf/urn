@@ -282,7 +282,8 @@ impl std::error::Error for Error {}
 /// [according to the specification](https://www.rfc-editor.org/rfc/rfc8141.html#section-3),
 /// only taking the NID and NSS into account! If you need exact equivalence checks, consider
 /// comparing using `Urn::as_str()` as the key. Some namespaces may define additional lexical
-/// equivalence checks, these aren't accounted for in this implementation.
+/// equivalence rules, these aren't accounted for in this implementation (Meaning there might be
+/// false negatives for some namespaces). There will, however, be no false positives.
 #[derive(Clone, Debug)]
 pub struct Urn {
     // Entire URN string
