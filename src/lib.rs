@@ -262,8 +262,8 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Error::InvalidScheme => "invalid urn scheme",
-            Error::InvalidNid => "invalid urn namespace id",
-            Error::InvalidNss => "invalid urn namespace-specific string",
+            Error::InvalidNid => "invalid urn nid",
+            Error::InvalidNss => "invalid urn nss",
             Error::InvalidRComponent => "invalid urn r-component",
             Error::InvalidQComponent => "invalid urn q-component",
             Error::InvalidFComponent => "invalid urn f-component (fragment)",
@@ -590,8 +590,8 @@ impl UrnBuilder {
             f_component: None,
         }
     }
-    /// Change the namespace.
-    pub fn namespace(mut self, nid: &str) -> Self {
+    /// Change the namespace id.
+    pub fn nid(mut self, nid: &str) -> Self {
         self.nid = nid.to_owned();
         self
     }

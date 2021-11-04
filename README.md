@@ -17,6 +17,7 @@ URNs have a surprising amount of obscure details to the point I'm not sure at th
 - 0.3.2 - add `Clone` impl for `Urn`
 - 0.3.3 - more precise builder errors; reduce memory footprint by up to 15 bytes (but increase it by 5 bytes on 16-bit platforms)
 - 0.3.4 - serde support by @callym
+- 0.4.0 - UrnBuilder::namespace -> UrnBuilder::nid
 
 ## License
 
