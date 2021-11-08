@@ -550,7 +550,7 @@ impl serde::Serialize for Urn {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self)
+        serializer.serialize_str(self)
     }
 }
 
@@ -572,6 +572,7 @@ impl serde::Serialize for Urn {
 /// # }
 /// ```
 #[derive(Debug)]
+#[must_use]
 pub struct UrnBuilder {
     nid: String,
     nss: String,
