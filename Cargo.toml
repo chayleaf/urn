@@ -1,11 +1,11 @@
 [package]
 name = "urn"
-version = "0.4.0"
-edition = "2018"
+version = "0.5.0"
+edition = "2021"
 readme = "README.md"
-authors = ["pavlukivan <chayleaf@protonmail.com>"]
+authors = ["chayleaf <chayleaf-cratesio@pavluk.org>"]
 description = "A crate for handling URNs (Unique Resource Identifiers)"
-repository = "https://github.com/trebuchet-games/urn/"
+repository = "https://github.com/chayleaf/urn/"
 license = "0BSD OR MIT OR Apache-2.0"
 keywords = ["urn", "uri", "iana", "namespace", "parser"]
 categories = ["parser-implementations", "web-programming", "encoding"]

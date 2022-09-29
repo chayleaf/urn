@@ -1,5 +1,9 @@
 //! A crate for handling [URNs](https://datatracker.ietf.org/doc/html/rfc8141).
 //!
+//! Features
+//! - `serde` - [Serde](https://serde.rs) support
+//! - `std` (enabled by default) - [`std::error::Error`] integration
+//!
 //! # Example
 //! ```
 //! # #[cfg(not(feature = "std"))]
@@ -30,206 +34,239 @@ use core::{
     hash::{self, Hash},
     num::{NonZeroU32, NonZeroU8},
     ops::{Deref, Range, RangeBounds},
-    result,
     slice::SliceIndex,
     str::FromStr,
 };
 #[cfg(feature = "std")]
 use std::{borrow::Cow, fmt};
 
-#[repr(u8)]
-#[derive(Debug, PartialEq, Eq)]
-/// A helper enum for [`replace_case`]
-enum Case {
-    Lower = 0,
-    Upper = 1,
+fn cow_mut_ref<'a>(c: &'a mut Cow<str>) -> &'a mut str {
+    if let Cow::Borrowed(s) = c {
+        *c = s.to_owned().into();
+    }
+    if let Cow::Owned(s) = c {
+        s.as_mut_str()
+    } else {
+        unreachable!("cow isn't owned after making it owned, what happened?")
+    }
 }
 
-/// Make all ascii letters in range uppercase (or lowercase)
-fn replace_case<R, const UPPER: u8>(c: &mut Cow<str>, range: R)
+fn make_uppercase<R>(c: &mut Cow<str>, range: R)
 where
     R: Clone + RangeBounds<usize> + SliceIndex<str>,
     R::Output: AsRef<str> + AsMut<str>,
 {
-    let needs_fixing = (&c[range.clone()]).as_ref().bytes().any(|b| {
-        if UPPER != 0 {
-            b.is_ascii_lowercase()
-        } else {
-            b.is_ascii_uppercase()
-        }
-    });
-    if needs_fixing {
-        if let Cow::Borrowed(s) = c {
-            *c = s.to_owned().into();
-        }
-        if let Cow::Owned(s) = c {
-            let s = s.as_mut_str()[range].as_mut();
-            if UPPER != 0 {
-                s.make_ascii_uppercase();
-            } else {
-                s.make_ascii_lowercase();
-            }
-        }
+    if c[range.clone()]
+        .as_ref()
+        .bytes()
+        .any(|b| b.is_ascii_lowercase())
+    {
+        cow_mut_ref(c)[range].as_mut().make_ascii_uppercase();
+    }
+}
+
+fn make_lowercase<R>(c: &mut Cow<str>, range: R)
+where
+    R: Clone + RangeBounds<usize> + SliceIndex<str>,
+    R::Output: AsRef<str> + AsMut<str>,
+{
+    if c[range.clone()]
+        .as_ref()
+        .bytes()
+        .any(|b| b.is_ascii_uppercase())
+    {
+        cow_mut_ref(c)[range].as_mut().make_ascii_lowercase();
     }
 }
 
 /// Checks whether a string is a valid NID
 fn is_valid_nid(s: &str) -> bool {
-    s.len() >= 2
+    // NID = (alphanum) 0*30(ldh) (alphanum)
+    // ldh = alphanum / "-"
+    (2..=32).contains(&s.len())
         && !s.starts_with('-')
         && !s.ends_with('-')
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || (b as char) == '-')
 }
 
+/// Different components are percent-encoded differently...
 #[derive(Copy, Clone, Eq, PartialEq)]
-enum PEncoded {
+enum PctEncoded {
     Nss,
     RComponent,
     QComponent,
     FComponent,
 }
 
-/// Must be a valid percent-encoded string already. Returns the end.
-fn parse_encoded(s: &mut Cow<str>, start: usize, kind: PEncoded) -> usize {
+/// Parse percent-encoded string. Returns the end.
+fn parse_pct_encoded(s: &mut Cow<str>, start: usize, kind: PctEncoded) -> usize {
     let mut it = start..s.len();
     while let Some(i) = it.next() {
-        match (kind, s.bytes().nth(i).unwrap() as char) {
-            (PEncoded::FComponent, '?') => {}
-            // ?= terminates the r-component despite otherwise being a valid part of r-component
-            (PEncoded::RComponent, '?')
+        // unwrap: i is always less than to s.len(), s' length isn't changed in the loop
+        match (kind, s.bytes().nth(i).unwrap()) {
+            /* question mark handling */
+            // ? is always allowed in f-components
+            (PctEncoded::FComponent, b'?') => {}
+            // ? is a valid part of q-component if not at the start
+            (PctEncoded::QComponent, b'?') if i != start => {}
+            // ? is a valid part of r-component if not at the start, but ?= indicates the q-component start, so only allow the ? if it isn't followed by =
+            (PctEncoded::RComponent, b'?')
                 if i != start
                     && s.bytes()
                         .nth(i + 1)
-                        .map(|b| b as char != '=')
-                        .unwrap_or(true) => {}
-            (PEncoded::QComponent, '?') if i != start => {}
-            (PEncoded::FComponent, '/') => {}
-            (_, '/') if i != start => {}
+                        .filter(|b| *b == b'=')
+                        .is_none() => {}
+            /* slash handling */
+            // slash is uniquely allowed at the start of f-component...
+            (PctEncoded::FComponent, b'/') => {}
+            // ...but in general it's allowed everywhere
+            (_, b'/') if i != start => {}
+            /* the rest is handled the same everywhere */
+            // various symbols that are allowed as pchar
             (
                 _,
-                '-' | '.' | '_' | '~' | '!' | '$' | '&' | '\'' | '(' | ')' | '*' | '+' | ',' | ';'
-                | '=' | ':' | '@',
+                // unreserved = ALPHA / DIGIT / <the following symbols>
+                b'-' | b'.' | b'_' | b'~'
+                // sub-delims = <the following symbols>
+                | b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';' | b'='
+                // pchar = unreserved / pct-encoded / sub-delims / <the following symbols>
+                | b':' | b'@',
             ) => {}
-            (_, c) if c.is_ascii_alphanumeric() => {}
-            (_, '%')
+            // pct-encoded = "%" HEXDIG HEXDIG
+            // HEXDIG =  DIGIT / "A" / "B" / "C" / "D" / "E" / "F"
+            // (ABNF strings are case insensitive)
+            (_, b'%')
                 if i + 2 < s.bytes().len()
                     && s.bytes().skip(i + 1).take(2).all(|c| c.is_ascii_hexdigit()) =>
             {
-                replace_case::<_, { Case::Upper as u8 }>(s, i + 1..i + 3);
+                // percent encoding must be normalized by uppercasing it
+                make_uppercase(s, i + 1..i + 3);
                 it.next();
                 it.next();
             }
+            // ALPHA / DIGIT
+            (_, c) if c.is_ascii_alphanumeric() => {}
+            // other characters can't be part of this component, so this is the end
             (_, _) => return i,
         }
     }
+    // this was the last component!
     s.len()
 }
 
-/// Returns the end
+/// Returns the NSS end
 fn parse_nss(s: &mut Cow<str>, start: usize) -> usize {
-    parse_encoded(s, start, PEncoded::Nss)
+    parse_pct_encoded(s, start, PctEncoded::Nss)
 }
 
-/// Returns the end
+/// Returns the r-component end
 fn parse_r_component(s: &mut Cow<str>, start: usize) -> usize {
-    parse_encoded(s, start, PEncoded::RComponent)
+    parse_pct_encoded(s, start, PctEncoded::RComponent)
 }
 
-/// Returns the end
+/// Returns the q-component end
 fn parse_q_component(s: &mut Cow<str>, start: usize) -> usize {
-    parse_encoded(s, start, PEncoded::QComponent)
+    parse_pct_encoded(s, start, PctEncoded::QComponent)
 }
 
-/// Returns the end
+/// Returns the f-component end
 fn parse_f_component(s: &mut Cow<str>, start: usize) -> usize {
-    parse_encoded(s, start, PEncoded::FComponent)
+    parse_pct_encoded(s, start, PctEncoded::FComponent)
 }
+
+const URN_PREFIX: &str = "urn:";
+const NID_NSS_SEPARATOR: &str = ":";
+const RCOMP_PREFIX: &str = "?+";
+const QCOMP_PREFIX: &str = "?=";
+const FCOMP_PREFIX: &str = "#";
 
 fn parse_urn(mut s: Cow<str>) -> Result<Urn> {
-    if s.len() < 4 {
+    if s.len() < URN_PREFIX.len() {
         return Err(Error::InvalidScheme);
     }
 
-    replace_case::<_, { Case::Lower as u8 }>(&mut s, ..4);
+    make_lowercase(&mut s, ..URN_PREFIX.len());
 
-    if &s[..4] != "urn:" {
+    if &s[..URN_PREFIX.len()] != URN_PREFIX {
         return Err(Error::InvalidScheme);
     }
 
-    let nid_start = 4;
-    let nid_end = s
-        .bytes()
-        .enumerate()
-        .skip(nid_start)
-        .find(|(_, b)| *b as char == ':')
-        .map(|(i, _)| i);
+    let nid_start = URN_PREFIX.len();
+    let nid_end = nid_start
+        + s[nid_start..].find(NID_NSS_SEPARATOR).ok_or_else(|| {
+            if is_valid_nid(&s[nid_start..]) {
+                // If NID is present, but the NSS and its separator aren't, it counts as an NSS error
+                Error::InvalidNss
+            } else {
+                // the NSS separator couldn't be found, but whatever has been found doesn't even count as a valid NID
+                Error::InvalidNid
+            }
+        })?;
 
-    // If NID is valid but NSS is completely missing (including the :), return NSS error instead of NID error
-    if nid_end.is_none() && is_valid_nid(&s[nid_start..]) {
-        return Err(Error::InvalidNss);
+    if !is_valid_nid(&s[nid_start..nid_end]) {
+        return Err(Error::InvalidNid);
     }
-    let nid_end = nid_end
-        .filter(|nid_end| is_valid_nid(&s[nid_start..*nid_end]))
-        .ok_or(Error::InvalidNid)?;
-    replace_case::<_, { Case::Lower as u8 }>(&mut s, nid_start..nid_end);
 
-    let nss_start = nid_end + 1;
+    // Now that we know the NID is valid, normalize it
+    make_lowercase(&mut s, nid_start..nid_end);
+
+    let nss_start = nid_end + NID_NSS_SEPARATOR.len();
     let nss_end = parse_nss(&mut s, nss_start);
+
+    // NSS must be at least one character long
     if nss_end == nss_start {
         return Err(Error::InvalidNss);
     }
 
     let mut end = nss_end;
-    let mut leftover_error = Error::InvalidNss;
+    let mut last_component_error = Error::InvalidNss;
 
-    let r_component_len = if s[end..].starts_with("?+") {
-        let rc_start = end + 2;
-        let rc_end = parse_r_component(&mut s, rc_start);
-        end = rc_end;
-        leftover_error = Error::InvalidRComponent;
+    let r_component_len = if s[end..].starts_with(RCOMP_PREFIX) {
+        let rc_start = end + RCOMP_PREFIX.len();
+        end = parse_r_component(&mut s, rc_start);
+        last_component_error = Error::InvalidRComponent;
         Some(
-            (rc_end - rc_start)
+            (end - rc_start)
                 .try_into()
                 .ok()
                 .and_then(NonZeroU32::new)
-                .ok_or(Error::InvalidRComponent)?,
+                .ok_or(last_component_error)?,
         )
     } else {
         None
     };
 
-    let q_component_len = if s[end..].starts_with("?=") {
-        let qc_start = end + 2;
-        let qc_end = parse_q_component(&mut s, qc_start);
-        end = qc_end;
-        leftover_error = Error::InvalidQComponent;
+    let q_component_len = if s[end..].starts_with(QCOMP_PREFIX) {
+        let qc_start = end + QCOMP_PREFIX.len();
+        end = parse_q_component(&mut s, qc_start);
+        last_component_error = Error::InvalidQComponent;
         Some(
-            (qc_end - qc_start)
+            (end - qc_start)
                 .try_into()
                 .ok()
                 .and_then(NonZeroU32::new)
-                .ok_or(Error::InvalidQComponent)?,
+                .ok_or(last_component_error)?,
         )
     } else {
         None
     };
 
-    if s[end..].starts_with('#') {
-        let fc_start = end + 1;
-        let fc_end = parse_f_component(&mut s, fc_start);
-        end = fc_end;
-        leftover_error = Error::InvalidFComponent;
+    if s[end..].starts_with(FCOMP_PREFIX) {
+        let fc_start = end + FCOMP_PREFIX.len();
+        end = parse_f_component(&mut s, fc_start);
+        last_component_error = Error::InvalidFComponent;
     }
 
     if end < s.len() {
-        return Err(leftover_error);
+        return Err(last_component_error);
     }
 
     Ok(Urn {
         urn: s.into_owned(),
-        // We already know NID will fit into 32 bytes
+        // unwrap: NID length range is 2..=32 bytes, so it always fits into non-zero u8
         nid_len: NonZeroU8::new((nid_end - nid_start).try_into().unwrap()).unwrap(),
+        // unwrap: NSS always has non-zero length
         nss_len: NonZeroU32::new(
             (nss_end - nss_start)
                 .try_into()
@@ -261,17 +298,17 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Error::InvalidScheme => "invalid urn scheme",
-            Error::InvalidNid => "invalid urn nid (namespace id)",
-            Error::InvalidNss => "invalid urn nss (namespace-specific string)",
-            Error::InvalidRComponent => "invalid urn r-component",
-            Error::InvalidQComponent => "invalid urn q-component",
-            Error::InvalidFComponent => "invalid urn f-component (fragment)",
+            Self::InvalidScheme => "invalid urn scheme",
+            Self::InvalidNid => "invalid urn nid (namespace id)",
+            Self::InvalidNss => "invalid urn nss (namespace-specific string)",
+            Self::InvalidRComponent => "invalid urn r-component",
+            Self::InvalidQComponent => "invalid urn q-component",
+            Self::InvalidFComponent => "invalid urn f-component (fragment)",
         })
     }
 }
 
-type Result<T> = result::Result<T, Error>;
+type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[cfg(feature = "std")]
 impl std::error::Error for Error {}
@@ -295,50 +332,58 @@ pub struct Urn {
 }
 
 impl Urn {
-    fn nid_range(&self) -> Range<usize> {
+    const fn nid_range(&self) -> Range<usize> {
         // urn:<nid>
-        4..4 + self.nid_len.get() as usize
+        let start = URN_PREFIX.len();
+        start..start + self.nid_len.get() as usize
     }
 
-    fn nss_range(&self) -> Range<usize> {
-        // urn:<nid>:<nss>
-        let start = self.nid_range().end + 1;
+    const fn nss_range(&self) -> Range<usize> {
+        // ...<nid>:<nss>
+        let start = self.nid_range().end + NID_NSS_SEPARATOR.len();
         start..start + self.nss_len.get() as usize
     }
 
     fn r_component_range(&self) -> Option<Range<usize>> {
         self.r_component_len.map(|r_component_len| {
-            // urn:<nid>:<nss>[?+<r-component>]
-            let start = self.nss_range().end + 2;
+            // ...<nss>[?+<r-component>]
+            let start = self.nss_range().end + RCOMP_PREFIX.len();
             start..start + r_component_len.get() as usize
         })
     }
 
+    /// end of the last component before q-component
+    fn pre_q_component_end(&self) -> usize {
+        self.r_component_range()
+            .unwrap_or_else(|| self.nss_range())
+            .end
+    }
+
     fn q_component_range(&self) -> Option<Range<usize>> {
         self.q_component_len.map(|q_component_len| {
-            // urn:<nid>:<nss>[?+<r-component>][?=<q-component>]
-            let start = self
-                .r_component_range()
-                .unwrap_or_else(|| self.nss_range())
-                .end
-                + 2;
+            // ...<nss>[?+<r-component>][?=<q-component>]
+            let start = self.pre_q_component_end() + QCOMP_PREFIX.len();
             start..start + q_component_len.get() as usize
         })
     }
 
-    fn f_component_start(&self) -> Option<usize> {
-        let pre_fc = self
-            .q_component_range()
+    /// end of the last component before f-component
+    fn pre_f_component_end(&self) -> usize {
+        self.q_component_range()
             .or_else(|| self.r_component_range())
             .unwrap_or_else(|| self.nss_range())
-            .end;
-        (pre_fc < self.urn.len()).then(|| {
-            // urn:<nid>:<nss>[?+<r-component>][?=<q-component>][#<f-component>]
-            pre_fc + 1
-        })
+            .end
     }
 
-    /// String representation of the current URN (Canonicized).
+    fn f_component_start(&self) -> Option<usize> {
+        // ...[#<f-component>]
+        Some(self.pre_f_component_end())
+            .filter(|x| *x < self.urn.len())
+            .map(|x| x + FCOMP_PREFIX.len())
+    }
+
+    /// String representation of this URN (Canonicized).
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.urn
     }
@@ -346,68 +391,76 @@ impl Urn {
     /// NID (Namespace identifier), the first part of the URN.
     ///
     /// For example, in `urn:ietf:rfc:2648`, `ietf` is the namespace.
+    #[must_use]
     pub fn nid(&self) -> &str {
         &self.urn[self.nid_range()]
     }
     /// Set the NID (must be [a valid NID](https://datatracker.ietf.org/doc/html/rfc8141#section-2)).
+    /// # Errors
+    /// Returns [`Error::InvalidNid`] in case of a validation failure.
     pub fn set_nid(&mut self, nid: &str) -> Result<()> {
         if !is_valid_nid(nid) {
             return Err(Error::InvalidNid);
         }
         let mut nid = nid.into();
-        replace_case::<_, { Case::Lower as u8 }>(&mut nid, ..);
+        make_lowercase(&mut nid, ..);
         self.urn.replace_range(self.nid_range(), &nid);
-        // We already know NID will fit into 32 bytes
+        // unwrap: NID length range is 2..=32 bytes, so it always fits into non-zero u8
         self.nid_len = NonZeroU8::new(nid.len().try_into().unwrap()).unwrap();
         Ok(())
     }
     /// NSS (Namespace-specific string) identifying the resource.
     ///
     /// For example, in `urn:ietf:rfc:2648`, `rfs:2648` is the NSS.
+    #[must_use]
     pub fn nss(&self) -> &str {
         &self.urn[self.nss_range()]
     }
-    /// Set the namespace-specific string (must be [a valid NSS](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding).
+    /// Set the NSS (must be [a valid NSS](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding).
+    /// # Errors
+    /// Returns [`Error::InvalidNss`] in case of a validation failure.
     pub fn set_nss(&mut self, nss: &str) -> Result<()> {
         let mut nss = Cow::from(nss);
         if nss.is_empty() || parse_nss(&mut nss, 0) != nss.len() {
             return Err(Error::InvalidNss);
         }
-        self.urn.replace_range(self.nss_range(), &nss);
-        self.nss_len =
+        // unwrap: nss has non-zero length as checked above
+        let nss_len =
             NonZeroU32::new(nss.len().try_into().map_err(|_| Error::InvalidNss)?).unwrap();
+        self.urn.replace_range(self.nss_range(), &nss);
+        self.nss_len = nss_len;
         Ok(())
     }
     /// r-component, following the `?+` character sequence, to be used for passing parameters
     /// to URN resolution services.
     ///
-    /// In `urn:example:foo-bar-baz-qux?+CCResolve:cc=uk`, `CCResolve:cc=uk` is the r-component.
+    /// In `urn:example:foo-bar-baz-qux?+CCResolve:cc=uk`, the r-component is `CCResolve:cc=uk`.
     ///
-    /// Should not be used for equivalence checks. As of 2021, exact semantics are undefined.
+    /// Should not be used for equivalence checks. As of the time of writing this, exact semantics are undefined.
+    #[must_use]
     pub fn r_component(&self) -> Option<&str> {
         self.r_component_range().map(|range| &self.urn[range])
     }
     /// Set the r-component (must be [a valid r-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding).
+    /// # Errors
+    /// Returns [`Error::InvalidRComponent`] in case of a validation failure.
     pub fn set_r_component(&mut self, r_component: Option<&str>) -> Result<()> {
-        let range = self
-            .r_component_range()
-            .map(|mut r| {
-                r.start -= 2;
-                r
-            })
-            .unwrap_or_else(|| {
-                let nss_end = self.nss_range().end;
-                nss_end..nss_end
-            });
         if let Some(rc) = r_component {
             let mut rc = Cow::from(rc);
             if rc.is_empty() || parse_r_component(&mut rc, 0) != rc.len() {
                 return Err(Error::InvalidRComponent);
             }
-            let r_component_len = rc.len().try_into().map_err(|_| Error::InvalidRComponent)?;
-            self.urn.replace_range(range, &("?+".to_owned() + &rc));
-            self.r_component_len = Some(NonZeroU32::new(r_component_len).unwrap());
-        } else {
+            let rc_len = rc.len().try_into().map_err(|_| Error::InvalidRComponent)?;
+            // insert RCOMP_PREFIX if r-component doesn't already exist
+            let range = self.r_component_range().unwrap_or_else(|| {
+                let nss_end = self.nss_range().end;
+                self.urn.replace_range(nss_end..nss_end, RCOMP_PREFIX);
+                nss_end + RCOMP_PREFIX.len()..nss_end + RCOMP_PREFIX.len()
+            });
+            self.urn.replace_range(range, &rc);
+            self.r_component_len = Some(NonZeroU32::new(rc_len).unwrap());
+        } else if let Some(mut range) = self.r_component_range() {
+            range.start -= RCOMP_PREFIX.len();
             self.urn.replace_range(range, "");
             self.r_component_len = None;
         }
@@ -416,57 +469,66 @@ impl Urn {
     /// q-component, following the `?=` character sequence. Has a similar function to the URL query
     /// string.
     ///
+    /// In `urn:example:weather?=op=map&lat=39.56&lon=-104.85`,
+    /// the q-component is `op=map&lat=39.56&lon=-104.85`.
+    ///
     /// Should not be used for equivalence checks.
+    #[must_use]
     pub fn q_component(&self) -> Option<&str> {
         self.q_component_range().map(|range| &self.urn[range])
     }
     /// Set the q-component (must be [a valid q-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding).
+    /// # Errors
+    /// Returns [`Error::InvalidQComponent`] in case of a validation failure.
     pub fn set_q_component(&mut self, q_component: Option<&str>) -> Result<()> {
-        let range = self
-            .q_component_range()
-            .map(|mut r| {
-                r.start -= 2;
-                r
-            })
-            .or_else(|| self.r_component_range().map(|r| r.end..r.end))
-            .unwrap_or_else(|| {
-                let nss_end = self.nss_range().end;
-                nss_end..nss_end
-            });
         if let Some(qc) = q_component {
             let mut qc = Cow::from(qc);
             if qc.is_empty() || parse_q_component(&mut qc, 0) != qc.len() {
                 return Err(Error::InvalidQComponent);
             }
-            let q_component_len = qc.len().try_into().map_err(|_| Error::InvalidRComponent)?;
-            self.urn.replace_range(range, &("?=".to_owned() + &qc));
-            self.q_component_len = Some(NonZeroU32::new(q_component_len).unwrap());
-        } else {
+            let qc_len = qc.len().try_into().map_err(|_| Error::InvalidQComponent)?;
+            // insert QCOMP_PREFIX if q-component doesn't already exist
+            let range = self.q_component_range().unwrap_or_else(|| {
+                let pre_qc_end = self.pre_q_component_end();
+                self.urn.replace_range(pre_qc_end..pre_qc_end, QCOMP_PREFIX);
+                pre_qc_end + QCOMP_PREFIX.len()..pre_qc_end + QCOMP_PREFIX.len()
+            });
+            self.urn.replace_range(range, &qc);
+            self.q_component_len = Some(NonZeroU32::new(qc_len).unwrap());
+        } else if let Some(mut range) = self.q_component_range() {
+            range.start -= QCOMP_PREFIX.len();
             self.urn.replace_range(range, "");
             self.q_component_len = None;
         }
         Ok(())
     }
-    /// f-component (fragment) following the `#` character at the end of the URN.
+    /// f-component following the `#` character at the end of the URN. Has a similar function to
+    /// the URL fragment.
+    ///
+    /// In `urn:example:a123,z456#789`, the f-component is `789`.
     ///
     /// Should not be used for equivalence checks.
+    #[must_use]
     pub fn f_component(&self) -> Option<&str> {
         self.f_component_start().map(|start| &self.urn[start..])
     }
     /// Set the f-component (must be [a valid f-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding).
+    /// # Errors
+    /// Returns [`Error::InvalidFComponent`] in case of a validation failure.
     pub fn set_f_component(&mut self, f_component: Option<&str>) -> Result<()> {
-        let start = self
-            .f_component_start()
-            .map(|s| s - 1)
-            .unwrap_or_else(|| self.urn.len());
         if let Some(fc) = f_component {
             let mut fc = fc.into();
             if parse_f_component(&mut fc, 0) != fc.len() {
                 return Err(Error::InvalidFComponent);
             }
-            self.urn.replace_range(start.., &("#".to_owned() + &fc));
-        } else {
-            self.urn.replace_range(start.., "");
+            let start = self.f_component_start().unwrap_or_else(|| {
+                self.urn
+                    .replace_range(self.urn.len()..self.urn.len(), FCOMP_PREFIX);
+                self.urn.len()
+            });
+            self.urn.replace_range(start.., &fc);
+        } else if let Some(start) = self.f_component_start() {
+            self.urn.replace_range(start - FCOMP_PREFIX.len().., "");
         }
         Ok(())
     }
@@ -506,7 +568,7 @@ impl Hash for Urn {
 }
 
 impl fmt::Display for Urn {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> result::Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         f.write_str(&self.urn)
     }
 }
@@ -535,7 +597,7 @@ impl TryFrom<String> for Urn {
 #[cfg(feature = "serde")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 impl<'de> serde::Deserialize<'de> for Urn {
-    fn deserialize<D>(de: D) -> result::Result<Self, <D as serde::Deserializer<'de>>::Error>
+    fn deserialize<D>(de: D) -> Result<Self, <D as serde::Deserializer<'de>>::Error>
     where
         D: serde::Deserializer<'de>,
     {
@@ -546,7 +608,7 @@ impl<'de> serde::Deserialize<'de> for Urn {
 #[cfg(feature = "serde")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 impl serde::Serialize for Urn {
-    fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -582,7 +644,7 @@ pub struct UrnBuilder {
 }
 
 impl UrnBuilder {
-    /// Create a new UrnBuilder.
+    /// Create a new `UrnBuilder`.
     pub fn new(nid: &str, nss: &str) -> Self {
         Self {
             nid: nid.to_owned(),
@@ -603,70 +665,74 @@ impl UrnBuilder {
         self
     }
     /// Change the r-component.
-    pub fn r_component(mut self, r_component: &str) -> Self {
-        self.r_component = Some(r_component.to_owned());
+    pub fn r_component(mut self, r_component: Option<&str>) -> Self {
+        self.r_component = r_component.map(ToOwned::to_owned);
         self
     }
     /// Change the q-component.
-    pub fn q_component(mut self, q_component: &str) -> Self {
-        self.q_component = Some(q_component.to_owned());
+    pub fn q_component(mut self, q_component: Option<&str>) -> Self {
+        self.q_component = q_component.map(ToOwned::to_owned);
         self
     }
     /// Change the f-component.
-    pub fn f_component(mut self, f_component: &str) -> Self {
-        self.f_component = Some(f_component.to_owned());
+    pub fn f_component(mut self, f_component: Option<&str>) -> Self {
+        self.f_component = f_component.map(ToOwned::to_owned);
         self
     }
     /// [Validate the data](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and create the URN.
+    ///
+    /// # Errors
+    ///
+    /// In case of a validation failure, returns an error specifying the component that failed
+    /// validation
     pub fn build(self) -> Result<Urn> {
-        fn cow_push(c: &mut Cow<str>, s: char) {
-            if let Cow::Owned(c) = c {
-                c.push(s);
-            }
-        }
         fn cow_push_str(c: &mut Cow<str>, s: &str) {
             if let Cow::Owned(c) = c {
                 c.push_str(s);
+            } else {
+                unreachable!("cow must be owned to use this function")
             }
         }
         if !is_valid_nid(&self.nid) {
             return Err(Error::InvalidNid);
         }
-        let mut s = Cow::from("urn:".to_owned());
+        let mut s = Cow::from(URN_PREFIX.to_owned());
         cow_push_str(&mut s, &self.nid);
-        cow_push(&mut s, ':');
+        cow_push_str(&mut s, NID_NSS_SEPARATOR);
+        let nss_start = s.len();
         cow_push_str(&mut s, &self.nss);
-        if self.nss.is_empty() || parse_nss(&mut s, 5 + self.nid.len()) != s.len() {
+        if self.nss.is_empty() || parse_nss(&mut s, nss_start) != s.len() {
             return Err(Error::InvalidNss);
         }
         if let Some(ref rc) = self.r_component {
-            cow_push_str(&mut s, "?+");
-            let end = s.len();
+            cow_push_str(&mut s, RCOMP_PREFIX);
+            let rc_start = s.len();
             cow_push_str(&mut s, rc);
-            if rc.is_empty() || parse_r_component(&mut s, end) != s.len() {
+            if rc.is_empty() || parse_r_component(&mut s, rc_start) != s.len() {
                 return Err(Error::InvalidRComponent);
             }
         }
         if let Some(ref qc) = self.q_component {
-            cow_push_str(&mut s, "?+");
-            let end = s.len();
+            cow_push_str(&mut s, QCOMP_PREFIX);
+            let qc_start = s.len();
             cow_push_str(&mut s, qc);
-            if qc.is_empty() || parse_q_component(&mut s, end) != s.len() {
+            if qc.is_empty() || parse_q_component(&mut s, qc_start) != s.len() {
                 return Err(Error::InvalidQComponent);
             }
         }
         if let Some(fc) = self.f_component {
-            cow_push(&mut s, '#');
-            let end = s.len();
+            cow_push_str(&mut s, FCOMP_PREFIX);
+            let fc_start = s.len();
             cow_push_str(&mut s, &fc);
-            if parse_f_component(&mut s, end) != s.len() {
+            if parse_f_component(&mut s, fc_start) != s.len() {
                 return Err(Error::InvalidFComponent);
             }
         }
         Ok(Urn {
             urn: s.into(),
-            // We already know NID will fit into 32 bytes
+            // unwrap: NID length range is 2..=32 bytes, so it always fits into non-zero u8
             nid_len: NonZeroU8::new(self.nid.len().try_into().unwrap()).unwrap(),
+            // unwrap: NSS length is non-zero as checked above
             nss_len: NonZeroU32::new(self.nss.len().try_into().map_err(|_| Error::InvalidNss)?)
                 .unwrap(),
             r_component_len: self
@@ -674,6 +740,7 @@ impl UrnBuilder {
                 .map(|x| {
                     x.len()
                         .try_into()
+                        // unwrap: r-component has non-zero length as checked above
                         .map(|x| NonZeroU32::new(x).unwrap())
                         .map_err(|_| Error::InvalidRComponent)
                 })
@@ -683,6 +750,7 @@ impl UrnBuilder {
                 .map(|x| {
                     x.len()
                         .try_into()
+                        // unwrap: q-component has non-zero length as checked above
                         .map(|x| NonZeroU32::new(x).unwrap())
                         .map_err(|_| Error::InvalidQComponent)
                 })
@@ -717,8 +785,8 @@ mod tests {
                 .parse::<Urn>()
                 .unwrap(),
             UrnBuilder::new("example", "foo-bar-baz-qux")
-                .r_component("CCResolve:cc=uk")
-                .f_component("test")
+                .r_component(Some("CCResolve:cc=uk"))
+                .f_component(Some("test"))
                 .build()
                 .unwrap()
         );
@@ -751,7 +819,9 @@ mod tests {
                 .parse::<Urn>()
                 .unwrap(),
             UrnBuilder::new("example", "weather")
-                .q_component("op=map&lat=39.56&lon=-104.85&datetime=1969-07-21T02:56:15Z")
+                .q_component(Some(
+                    "op=map&lat=39.56&lon=-104.85&datetime=1969-07-21T02:56:15Z"
+                ))
                 .build()
                 .unwrap()
         );
@@ -778,6 +848,13 @@ mod tests {
         assert_eq!("urn:-example:abcd".parse::<Urn>(), Err(Error::InvalidNid));
         assert_eq!("urn:example:/abcd".parse::<Urn>(), Err(Error::InvalidNss));
         assert_eq!("urn:a:abcd".parse::<Urn>(), Err(Error::InvalidNid));
+        assert_eq!(
+            "urn:0123456789abcdef0123456789abcdef0:abcd".parse::<Urn>(),
+            Err(Error::InvalidNid)
+        );
+        let _ = "urn:0123456789abcdef0123456789abcdef:abcd"
+            .parse::<Urn>()
+            .unwrap();
         assert_eq!("urn:example".parse::<Urn>(), Err(Error::InvalidNss));
         assert_eq!("urn:example:".parse::<Urn>(), Err(Error::InvalidNss));
         assert_eq!("urn:example:%".parse::<Urn>(), Err(Error::InvalidNss));
