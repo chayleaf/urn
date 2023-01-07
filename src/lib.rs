@@ -86,8 +86,7 @@ fn is_valid_nid(s: &str) -> bool {
     (2..=32).contains(&s.len())
         && !s.starts_with('-')
         && !s.ends_with('-')
-        && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
 /// Different components are percent-encoded differently...
@@ -182,10 +181,7 @@ const QCOMP_PREFIX: &str = "?=";
 const FCOMP_PREFIX: &str = "#";
 
 fn parse_urn(mut s: Cow<str>) -> Result<Urn> {
-    if s.len() < URN_PREFIX.len() {
-        return Err(Error::InvalidScheme);
-    }
-
+    // ensure that the first 4 bytes are a valid substring
     if !s.is_char_boundary(URN_PREFIX.len()) {
         return Err(Error::InvalidScheme);
     }
@@ -406,7 +402,7 @@ impl Urn {
         if !is_valid_nid(nid) {
             return Err(Error::InvalidNid);
         }
-        let mut nid = nid.into();
+        let mut nid = Cow::from(nid);
         make_lowercase(&mut nid, ..);
         self.urn.replace_range(self.nid_range(), &nid);
         // unwrap: NID length range is 2..=32 bytes, so it always fits into non-zero u8
@@ -428,7 +424,7 @@ impl Urn {
         if nss.is_empty() || parse_nss(&mut nss, 0) != nss.len() {
             return Err(Error::InvalidNss);
         }
-        // unwrap: nss has non-zero length as checked above
+        // unwrap: NSS length is non-zero as checked above
         let nss_len =
             NonZeroU32::new(nss.len().try_into().map_err(|_| Error::InvalidNss)?).unwrap();
         self.urn.replace_range(self.nss_range(), &nss);
@@ -521,7 +517,7 @@ impl Urn {
     /// Returns [`Error::InvalidFComponent`] in case of a validation failure.
     pub fn set_f_component(&mut self, f_component: Option<&str>) -> Result<()> {
         if let Some(fc) = f_component {
-            let mut fc = fc.into();
+            let mut fc = Cow::from(fc);
             if parse_f_component(&mut fc, 0) != fc.len() {
                 return Err(Error::InvalidFComponent);
             }
@@ -701,35 +697,38 @@ impl UrnBuilder {
             return Err(Error::InvalidNid);
         }
         let mut s = Cow::from(URN_PREFIX.to_owned());
-        cow_push_str(&mut s, &self.nid);
-        cow_push_str(&mut s, NID_NSS_SEPARATOR);
-        let nss_start = s.len();
-        cow_push_str(&mut s, &self.nss);
-        if self.nss.is_empty() || parse_nss(&mut s, nss_start) != s.len() {
-            return Err(Error::InvalidNss);
-        }
-        if let Some(ref rc) = self.r_component {
-            cow_push_str(&mut s, RCOMP_PREFIX);
-            let rc_start = s.len();
-            cow_push_str(&mut s, rc);
-            if rc.is_empty() || parse_r_component(&mut s, rc_start) != s.len() {
-                return Err(Error::InvalidRComponent);
+        {
+            let s = &mut s;
+            cow_push_str(s, &self.nid);
+            cow_push_str(s, NID_NSS_SEPARATOR);
+            let nss_start = s.len();
+            cow_push_str(s, &self.nss);
+            if self.nss.is_empty() || parse_nss(s, nss_start) != s.len() {
+                return Err(Error::InvalidNss);
             }
-        }
-        if let Some(ref qc) = self.q_component {
-            cow_push_str(&mut s, QCOMP_PREFIX);
-            let qc_start = s.len();
-            cow_push_str(&mut s, qc);
-            if qc.is_empty() || parse_q_component(&mut s, qc_start) != s.len() {
-                return Err(Error::InvalidQComponent);
+            if let Some(ref rc) = self.r_component {
+                cow_push_str(s, RCOMP_PREFIX);
+                let rc_start = s.len();
+                cow_push_str(s, rc);
+                if rc.is_empty() || parse_r_component(s, rc_start) != s.len() {
+                    return Err(Error::InvalidRComponent);
+                }
             }
-        }
-        if let Some(fc) = self.f_component {
-            cow_push_str(&mut s, FCOMP_PREFIX);
-            let fc_start = s.len();
-            cow_push_str(&mut s, &fc);
-            if parse_f_component(&mut s, fc_start) != s.len() {
-                return Err(Error::InvalidFComponent);
+            if let Some(ref qc) = self.q_component {
+                cow_push_str(s, QCOMP_PREFIX);
+                let qc_start = s.len();
+                cow_push_str(s, qc);
+                if qc.is_empty() || parse_q_component(s, qc_start) != s.len() {
+                    return Err(Error::InvalidQComponent);
+                }
+            }
+            if let Some(fc) = self.f_component {
+                cow_push_str(s, FCOMP_PREFIX);
+                let fc_start = s.len();
+                cow_push_str(s, &fc);
+                if parse_f_component(s, fc_start) != s.len() {
+                    return Err(Error::InvalidFComponent);
+                }
             }
         }
         Ok(Urn {
