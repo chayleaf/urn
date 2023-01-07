@@ -87,7 +87,7 @@ fn is_valid_nid(s: &str) -> bool {
         && !s.starts_with('-')
         && !s.ends_with('-')
         && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || (b as char) == '-')
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
 /// Different components are percent-encoded differently...
