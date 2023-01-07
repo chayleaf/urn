@@ -186,6 +186,10 @@ fn parse_urn(mut s: Cow<str>) -> Result<Urn> {
         return Err(Error::InvalidScheme);
     }
 
+    if !s.is_char_boundary(URN_PREFIX.len()) {
+        return Err(Error::InvalidScheme);
+    }
+
     make_lowercase(&mut s, ..URN_PREFIX.len());
 
     if &s[..URN_PREFIX.len()] != URN_PREFIX {
@@ -768,6 +772,7 @@ mod tests {
 
     #[test]
     fn it_works() {
+        "6򭞦*�".parse::<Urn>().unwrap_err();
         assert_eq!(
             "urn:nbn:de:bvb:19-146642".parse::<Urn>().unwrap(),
             UrnBuilder::new("nbn", "de:bvb:19-146642").build().unwrap()

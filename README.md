@@ -19,6 +19,7 @@ URNs have a surprising amount of obscure details to the point I'm not sure at th
 - 0.3.4 - Serde support by @callym
 - 0.4.0 - `UrnBuilder::namespace` -> `UrnBuilder::nid`
 - 0.5.0 - changed builder API to accept options for optional components, minor cleanup, fixed a couple potential minor bugs
+- 0.5.1 - fix a panic in case there wasn't a valid utf-8 char boundary 4 bytes into the string
 
 ## License
 
