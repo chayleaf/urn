@@ -33,7 +33,7 @@ use core::{
     convert::{TryFrom, TryInto},
     hash::{self, Hash},
     num::{NonZeroU32, NonZeroU8},
-    ops::{Deref, Range, RangeBounds},
+    ops::{Deref, Range},
     slice::SliceIndex,
     str::FromStr,
 };
@@ -53,44 +53,36 @@ fn cow_mut_ref<'a>(c: &'a mut Cow<str>) -> &'a mut str {
 
 fn make_uppercase<R>(c: &mut Cow<str>, range: R)
 where
-    R: Clone + RangeBounds<usize> + SliceIndex<str>,
-    R::Output: AsRef<str> + AsMut<str>,
+    R: Clone + SliceIndex<str, Output = str>,
 {
-    if c[range.clone()]
-        .as_ref()
-        .bytes()
-        .any(|b| b.is_ascii_lowercase())
-    {
-        cow_mut_ref(c)[range].as_mut().make_ascii_uppercase();
+    if c[range.clone()].bytes().any(|b| b.is_ascii_lowercase()) {
+        cow_mut_ref(c)[range].make_ascii_uppercase();
     }
 }
 
 fn make_lowercase<R>(c: &mut Cow<str>, range: R)
 where
-    R: Clone + RangeBounds<usize> + SliceIndex<str>,
-    R::Output: AsRef<str> + AsMut<str>,
+    R: Clone + SliceIndex<str, Output = str>,
 {
-    if c[range.clone()]
-        .as_ref()
-        .bytes()
-        .any(|b| b.is_ascii_uppercase())
-    {
-        cow_mut_ref(c)[range].as_mut().make_ascii_lowercase();
+    if c[range.clone()].bytes().any(|b| b.is_ascii_uppercase()) {
+        cow_mut_ref(c)[range].make_ascii_lowercase();
     }
 }
 
 /// Checks whether a string is a valid NID
 fn is_valid_nid(s: &str) -> bool {
+    // RFC8141:
     // NID = (alphanum) 0*30(ldh) (alphanum)
     // ldh = alphanum / "-"
+    //
+    // RFC2141 additionally allows NIDs to end with -
     (2..=32).contains(&s.len())
         && !s.starts_with('-')
-        && !s.ends_with('-')
         && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
 /// Different components are percent-encoded differently...
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone)]
 enum PctEncoded {
     Nss,
     RComponent,
@@ -100,26 +92,21 @@ enum PctEncoded {
 
 /// Parse percent-encoded string. Returns the end.
 fn parse_pct_encoded(s: &mut Cow<str>, start: usize, kind: PctEncoded) -> usize {
-    let mut it = start..s.len();
-    while let Some(i) = it.next() {
+    let mut it = s.bytes().enumerate().skip(start).peekable();
+    while let Some((i, ch)) = it.next() {
         // unwrap: i is always less than to s.len(), s' length isn't changed in the loop
-        match (kind, s.bytes().nth(i).unwrap()) {
+        match (kind, ch) {
             /* question mark handling */
             // ? is always allowed in f-components
             (PctEncoded::FComponent, b'?') => {}
             // ? is a valid part of q-component if not at the start
             (PctEncoded::QComponent, b'?') if i != start => {}
             // ? is a valid part of r-component if not at the start, but ?= indicates the q-component start, so only allow the ? if it isn't followed by =
-            (PctEncoded::RComponent, b'?')
-                if i != start
-                    && s.bytes()
-                        .nth(i + 1)
-                        .filter(|b| *b == b'=')
-                        .is_none() => {}
+            (PctEncoded::RComponent, b'?') if i != start && it.peek().map(|x| x.1) != Some(b'=') => {}
             /* slash handling */
             // slash is uniquely allowed at the start of f-component...
             (PctEncoded::FComponent, b'/') => {}
-            // ...but in general it's allowed everywhere
+            // ...but it's allowed everywhere if it isn't at the start
             (_, b'/') if i != start => {}
             /* the rest is handled the same everywhere */
             // various symbols that are allowed as pchar
@@ -135,19 +122,20 @@ fn parse_pct_encoded(s: &mut Cow<str>, start: usize, kind: PctEncoded) -> usize 
             // pct-encoded = "%" HEXDIG HEXDIG
             // HEXDIG =  DIGIT / "A" / "B" / "C" / "D" / "E" / "F"
             // (ABNF strings are case insensitive)
-            (_, b'%')
-                if i + 2 < s.bytes().len()
-                    && s.bytes().skip(i + 1).take(2).all(|c| c.is_ascii_hexdigit()) =>
-            {
-                // percent encoding must be normalized by uppercasing it
-                make_uppercase(s, i + 1..i + 3);
-                it.next();
-                it.next();
+            (_, b'%') => {
+                let mut pct_chars = it.take(2);
+                if pct_chars.len() == 2 && pct_chars.all(|x| x.1.is_ascii_hexdigit()) {
+                    // percent encoding must be normalized by uppercasing it
+                    make_uppercase(s, i + 1..i + 3);
+                    it = s.bytes().enumerate().skip(i + 3).peekable();
+                } else {
+                    return i
+                }
             }
             // ALPHA / DIGIT
             (_, c) if c.is_ascii_alphanumeric() => {}
             // other characters can't be part of this component, so this is the end
-            (_, _) => return i,
+            _ => return i,
         }
     }
     // this was the last component!
@@ -659,22 +647,22 @@ impl UrnBuilder {
         self.nid = nid.to_owned();
         self
     }
-    /// Change the namespace-specific string.
+    /// Change the namespace-specific string (must be percent encoded as per RFC).
     pub fn nss(mut self, nss: &str) -> Self {
         self.nss = nss.to_owned();
         self
     }
-    /// Change the r-component.
+    /// Change the r-component (must be percent encoded as per RFC).
     pub fn r_component(mut self, r_component: Option<&str>) -> Self {
         self.r_component = r_component.map(ToOwned::to_owned);
         self
     }
-    /// Change the q-component.
+    /// Change the q-component (must be percent encoded as per RFC).
     pub fn q_component(mut self, q_component: Option<&str>) -> Self {
         self.q_component = q_component.map(ToOwned::to_owned);
         self
     }
-    /// Change the f-component.
+    /// Change the f-component (must be percent encoded as per RFC).
     pub fn f_component(mut self, f_component: Option<&str>) -> Self {
         self.f_component = f_component.map(ToOwned::to_owned);
         self
