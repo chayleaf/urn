@@ -18,6 +18,57 @@ use core::{fmt, ops::{Deref, DerefMut}, str::FromStr};
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Urn(UrnSlice<'static>);
 
+impl<'a> From<UrnSlice<'a>> for Urn {
+    fn from(value: UrnSlice<'a>) -> Self {
+        use crate::TriCow;
+        Self(UrnSlice {
+            urn: match value.urn {
+                TriCow::Owned(s) => TriCow::Owned(s),
+                TriCow::Borrowed(s) => TriCow::Owned(s.to_owned()),
+                TriCow::MutBorrowed(s) => TriCow::Owned(s.to_owned()),
+            },
+            nid_len: value.nid_len,
+            nss_len: value.nss_len,
+            q_component_len: value.q_component_len,
+            r_component_len: value.r_component_len,
+        })
+    }
+}
+
+impl<'a> From<&UrnSlice<'a>> for Urn {
+    fn from(value: &UrnSlice<'a>) -> Self {
+        use crate::TriCow;
+        Self(UrnSlice {
+            urn: match &value.urn {
+                TriCow::Owned(s) => TriCow::Owned(s.clone()),
+                TriCow::Borrowed(s) => TriCow::Owned((*s).to_owned()),
+                TriCow::MutBorrowed(s) => TriCow::Owned((*s).to_owned()),
+            },
+            nid_len: value.nid_len,
+            nss_len: value.nss_len,
+            q_component_len: value.q_component_len,
+            r_component_len: value.r_component_len,
+        })
+    }
+}
+
+impl<'a> From<&mut UrnSlice<'a>> for Urn {
+    fn from(value: &mut UrnSlice<'a>) -> Self {
+        use crate::TriCow;
+        Self(UrnSlice {
+            urn: match &value.urn {
+                TriCow::Owned(s) => TriCow::Owned(s.clone()),
+                TriCow::Borrowed(s) => TriCow::Owned((*s).to_owned()),
+                TriCow::MutBorrowed(s) => TriCow::Owned((*s).to_owned()),
+            },
+            nid_len: value.nid_len,
+            nss_len: value.nss_len,
+            q_component_len: value.q_component_len,
+            r_component_len: value.r_component_len,
+        })
+    }
+}
+
 impl fmt::Debug for Urn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)

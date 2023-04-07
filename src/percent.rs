@@ -141,7 +141,10 @@ fn decode(s: &str, kind: PctEncoded) -> Option<String> {
 /// # use urn::Urn; fn test_main() -> Result<(), urn::Error> {
 /// let urn = Urn::try_from("urn:example:string%20with%20spaces")?;
 ///
-/// assert_eq!(urn::percent::decode_nss(urn.nss())?, "string with spaces");
+/// assert_eq!(
+///     urn::percent::decode_nss(urn.nss())?,
+///     "string with spaces"
+/// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
 #[cfg(feature = "alloc")]
@@ -154,7 +157,10 @@ pub fn decode_nss(s: &str) -> Result<String> {
 /// # use urn::Urn; fn test_main() -> Result<(), urn::Error> {
 /// let urn = Urn::try_from("urn:example:nss?+this%20is%20the%20r-component!")?;
 ///
-/// assert_eq!(urn::percent::decode_r_component(urn.r_component().unwrap())?, "this is the r-component!");
+/// assert_eq!(
+///     urn::percent::decode_r_component(urn.r_component().unwrap())?,
+///     "this is the r-component!"
+/// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
 #[cfg(feature = "alloc")]
@@ -167,7 +173,10 @@ pub fn decode_r_component(s: &str) -> Result<String> {
 /// # use urn::Urn; fn test_main() -> Result<(), urn::Error> {
 /// let urn = Urn::try_from("urn:example:nss?=this%20is%20the%20q-component!")?;
 ///
-/// assert_eq!(urn::percent::decode_q_component(urn.q_component().unwrap())?, "this is the q-component!");
+/// assert_eq!(
+///     urn::percent::decode_q_component(urn.q_component().unwrap())?,
+///     "this is the q-component!"
+/// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
 #[cfg(feature = "alloc")]
@@ -180,7 +189,10 @@ pub fn decode_q_component(s: &str) -> Result<String> {
 /// # use urn::Urn; fn test_main() -> Result<(), urn::Error> {
 /// let urn = Urn::try_from("urn:example:nss#f-component%20test")?;
 ///
-/// assert_eq!(urn::percent::decode_f_component(urn.f_component().unwrap())?, "f-component test");
+/// assert_eq!(
+///     urn::percent::decode_f_component(urn.f_component().unwrap())?,
+///     "f-component test"
+/// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
 #[cfg(feature = "alloc")]
@@ -253,8 +265,7 @@ fn encode(s: &str, kind: PctEncoded) -> String {
 /// # use urn::UrnBuilder; fn test_main() -> Result<(), urn::Error> {
 /// assert_eq!(
 ///     UrnBuilder::new("example", &urn::percent::encode_nss("test nss"))
-///         .build()
-///         .unwrap()
+///         .build()?
 ///         .as_str(),
 ///     "urn:example:test%20nss"
 /// );
@@ -271,8 +282,7 @@ pub fn encode_nss(s: &str) -> String {
 /// assert_eq!(
 ///     UrnBuilder::new("example", "nss")
 ///         .r_component(Some(&urn::percent::encode_r_component("😂😂💯")))
-///         .build()
-///         .unwrap()
+///         .build()?
 ///         .as_str(),
 ///     "urn:example:nss?+%F0%9F%98%82%F0%9F%98%82%F0%9F%92%AF"
 /// );
@@ -289,8 +299,7 @@ pub fn encode_r_component(s: &str) -> String {
 /// assert_eq!(
 ///     UrnBuilder::new("example", "nss")
 ///         .q_component(Some(&urn::percent::encode_q_component("~q component~")))
-///         .build()
-///         .unwrap()
+///         .build()?
 ///         .as_str(),
 ///     "urn:example:nss?=~q%20component~"
 /// );
@@ -307,8 +316,7 @@ pub fn encode_q_component(s: &str) -> String {
 /// assert_eq!(
 ///     UrnBuilder::new("example", "nss")
 ///         .f_component(Some(&urn::percent::encode_f_component("f-component (pretty much a fragment)")))
-///         .build()
-///         .unwrap()
+///         .build()?
 ///         .as_str(),
 ///     "urn:example:nss#f-component%20(pretty%20much%20a%20fragment)"
 /// );

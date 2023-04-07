@@ -3,9 +3,11 @@
 //! Features
 //! - `serde` - [Serde](https://serde.rs) support
 //! - `std` (enabled by default) - [`std::error::Error`] integration
-//! - `alloc` (enabled by default) - [`alloc`] support (you probably want to keep this enabled)
-//! - `nightly` - use `core::error::Error` rather than `std::error::Error`. **Warning: this feature
-//!   might be removed later and it won't be considered a breaking change!**
+//! - `nightly` - use `core::error::Error` rather than `std::error::Error`. This allows using it
+//!   without enabling the `std` feature. **Warning: this feature will be removed when this gets
+//!   stabilized and it won't be considered a breaking change!**
+//! - `alloc` (enabled by default) - [alloc](https://doc.rust-lang.org/alloc/index.html) support
+//!   (you probably want to keep this enabled)
 //!
 //! # Example
 //! ```
@@ -41,7 +43,7 @@ use core::{
 };
 
 #[cfg(feature = "std")]
-use std::error;
+use std::{borrow::ToOwned, error};
 #[cfg(all(not(feature = "std"), feature = "nightly"))]
 use core::error;
 
@@ -518,6 +520,7 @@ impl fmt::Display for UrnSlice<'_> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl FromStr for UrnSlice<'_> {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
@@ -540,6 +543,7 @@ impl<'a> TryFrom<&'a mut str> for UrnSlice<'a> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl TryFrom<String> for UrnSlice<'static> {
     type Error = Error;
     fn try_from(value: String) -> Result<Self> {
@@ -548,7 +552,7 @@ impl TryFrom<String> for UrnSlice<'static> {
 }
 
 #[cfg(all(feature = "serde", feature = "alloc"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "serde", feature = "alloc"))))]
 impl<'de> serde::Deserialize<'de> for UrnSlice<'static> {
     fn deserialize<D>(de: D) -> Result<Self, <D as serde::Deserializer<'de>>::Error>
     where
@@ -587,6 +591,7 @@ impl serde::Serialize for UrnSlice<'_> {
 /// # }
 /// ```
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 #[derive(Debug)]
 #[must_use]
 pub struct UrnBuilder<'a> {
