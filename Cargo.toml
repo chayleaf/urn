@@ -22,5 +22,5 @@ default-features = false
 [features]
 std = ["alloc"]
 default = ["std"]
-alloc = ["serde/alloc"]
+alloc = ["serde?/alloc"]
 nightly = []
