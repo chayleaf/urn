@@ -194,7 +194,8 @@ pub enum Error {
     InvalidQComponent,
     /// The URN has an invalid f-component.
     InvalidFComponent,
-    /// Allocation is required, but not possible
+    /// Allocation is required, but not possible. This is only ever created when `alloc` feature
+    /// is disabled.
     AllocRequired,
 }
 
@@ -329,7 +330,8 @@ impl<'a> UrnSlice<'a> {
     ///
     /// For example, in `urn:ietf:rfc:2648`, `rfs:2648` is the NSS.
     ///
-    /// **See also:** [`percent::decode_nss`]
+    /// # See also
+    /// - [`percent::decode_nss`]
     #[must_use]
     pub fn nss(&self) -> &str {
         &self.urn[self.nss_range()]
@@ -337,10 +339,11 @@ impl<'a> UrnSlice<'a> {
     /// Set the NSS (must be [a valid NSS](https://datatracker.ietf.org/doc/html/rfc8141#section-2)
     /// and use percent-encoding).
     ///
-    /// **See also:** [`percent::encode_nss`]
-    ///
     /// # Errors
     /// Returns [`Error::InvalidNss`] in case of a validation failure.
+    ///
+    /// # See also
+    /// - [`percent::encode_nss`]
     pub fn set_nss(&mut self, nss: &str) -> Result<()> {
         let mut nss = TriCow::Borrowed(nss);
         if nss.is_empty() || parse_nss(&mut nss, 0)? != nss.len() {
@@ -362,7 +365,8 @@ impl<'a> UrnSlice<'a> {
     /// Should not be used for equivalence checks. As of the time of writing this, exact semantics
     /// aren't in the RFC.
     ///
-    /// **See also:** [`percent::decode_r_component`]
+    /// # See also
+    /// - [`percent::decode_r_component`]
     #[must_use]
     pub fn r_component(&self) -> Option<&str> {
         self.r_component_range().map(|range| &self.urn[range])
@@ -371,10 +375,11 @@ impl<'a> UrnSlice<'a> {
     /// r-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use
     /// percent-encoding).
     ///
-    /// **See also:** [`percent::encode_r_component`]
-    ///
     /// # Errors
     /// Returns [`Error::InvalidRComponent`] in case of a validation failure.
+    ///
+    /// # See also
+    /// - [`percent::encode_r_component`]
     pub fn set_r_component(&mut self, r_component: Option<&str>) -> Result<()> {
         if let Some(rc) = r_component {
             let mut rc = TriCow::Borrowed(rc);
@@ -407,7 +412,8 @@ impl<'a> UrnSlice<'a> {
     ///
     /// Should not be used for equivalence checks.
     ///
-    /// **See also:** [`percent::decode_q_component`]
+    /// # See also
+    /// - [`percent::decode_q_component`]
     #[must_use]
     pub fn q_component(&self) -> Option<&str> {
         self.q_component_range().map(|range| &self.urn[range])
@@ -416,10 +422,11 @@ impl<'a> UrnSlice<'a> {
     /// q-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use
     /// percent-encoding).
     ///
-    /// **See also:** [`percent::encode_q_component`]
-    ///
     /// # Errors
     /// Returns [`Error::InvalidQComponent`] in case of a validation failure.
+    ///
+    /// # See also
+    /// - [`percent::encode_q_component`]
     pub fn set_q_component(&mut self, q_component: Option<&str>) -> Result<()> {
         if let Some(qc) = q_component {
             let mut qc = TriCow::Borrowed(qc);
@@ -451,7 +458,8 @@ impl<'a> UrnSlice<'a> {
     ///
     /// Should not be used for equivalence checks.
     ///
-    /// **See also:** [`percent::decode_f_component`]
+    /// # See also
+    /// - [`percent::decode_f_component`]
     #[must_use]
     pub fn f_component(&self) -> Option<&str> {
         self.f_component_start().map(|start| &self.urn[start..])
@@ -460,10 +468,11 @@ impl<'a> UrnSlice<'a> {
     /// f-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use
     /// percent-encoding).
     ///
-    /// **See also:** [`percent::encode_f_component`]
-    ///
     /// # Errors
     /// Returns [`Error::InvalidFComponent`] in case of a validation failure.
+    ///
+    /// # See also
+    /// - [`percent::encode_f_component`]
     pub fn set_f_component(&mut self, f_component: Option<&str>) -> Result<()> {
         if let Some(fc) = f_component {
             let mut fc = TriCow::Borrowed(fc);
@@ -631,7 +640,8 @@ impl<'a> UrnBuilder<'a> {
     /// - `nid`: the namespace identifier
     /// - `nss`: the percent-encoded NSS (namespace-specific string)
     ///
-    /// **See also:** [`percent::encode_nss`]
+    /// # See also
+    /// - [`percent::encode_nss`]
     pub fn new(nid: &'a str, nss: &'a str) -> Self {
         Self {
             nid,
@@ -648,28 +658,32 @@ impl<'a> UrnBuilder<'a> {
     }
     /// Change the namespace-specific string (must be percent encoded).
     ///
-    /// **See also:** [`percent::encode_nss`]
+    /// # See also
+    /// - [`percent::encode_nss`]
     pub fn nss(mut self, nss: &'a str) -> Self {
         self.nss = nss;
         self
     }
     /// Change the r-component (must be percent encoded).
     ///
-    /// **See also:** [`percent::encode_r_component`]
+    /// # See also
+    /// - [`percent::encode_r_component`]
     pub fn r_component(mut self, r_component: Option<&'a str>) -> Self {
         self.r_component = r_component;
         self
     }
     /// Change the q-component (must be percent encoded).
     ///
-    /// **See also:** [`percent::encode_q_component`]
+    /// # See also
+    /// - [`percent::encode_q_component`]
     pub fn q_component(mut self, q_component: Option<&'a str>) -> Self {
         self.q_component = q_component;
         self
     }
     /// Change the f-component (must be percent encoded).
     ///
-    /// **See also:** [`percent::encode_f_component`]
+    /// # See also
+    /// - [`percent::encode_f_component`]
     pub fn f_component(mut self, f_component: Option<&'a str>) -> Self {
         self.f_component = f_component;
         self
