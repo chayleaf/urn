@@ -42,10 +42,10 @@ use core::{
     ops::Range,
 };
 
-#[cfg(feature = "std")]
-use std::{borrow::ToOwned, error};
 #[cfg(all(not(feature = "std"), feature = "nightly"))]
 use core::error;
+#[cfg(feature = "std")]
+use std::{borrow::ToOwned, error};
 
 mod cow;
 use cow::{make_lowercase, make_uppercase, replace_range, TriCow};
@@ -61,7 +61,7 @@ pub use owned::Urn;
 pub mod percent;
 #[cfg(not(feature = "alloc"))]
 mod percent;
-use percent::{parse_nss, parse_r_component, parse_q_component, parse_f_component};
+use percent::{parse_f_component, parse_nss, parse_q_component, parse_r_component};
 
 /// Checks whether a string is a valid NID
 fn is_valid_nid(s: &str) -> bool {

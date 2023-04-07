@@ -1,7 +1,11 @@
 use crate::{Error, Result, UrnSlice};
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::{borrow::ToOwned, string::String};
-use core::{fmt, ops::{Deref, DerefMut}, str::FromStr};
+use core::{
+    fmt,
+    ops::{Deref, DerefMut},
+    str::FromStr,
+};
 
 /// An owned RFC2141/8141 URN (Uniform Resource Name).
 ///

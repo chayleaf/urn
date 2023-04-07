@@ -1,8 +1,8 @@
 //! This module contains functions for percent-encoding and decoding various components of a URN.
 
-use crate::{make_uppercase, Result, TriCow};
 #[cfg(feature = "alloc")]
 use crate::Error;
+use crate::{make_uppercase, Result, TriCow};
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 use alloc::{string::String, vec::Vec};
 
@@ -119,7 +119,7 @@ fn decode(s: &str, kind: PctEncoded) -> Option<String> {
                 if pct_chars.len() == 2 && pct_chars.all(|x| x.1.is_ascii_hexdigit()) {
                     ret.push(
                         parse_hex_char(s.as_bytes()[i + 1]) * 0x10
-                            + parse_hex_char(s.as_bytes()[i + 2])
+                            + parse_hex_char(s.as_bytes()[i + 2]),
                     );
                     it = s.bytes().enumerate().skip(i + 3).peekable();
                     continue;
@@ -204,16 +204,8 @@ pub fn decode_f_component(s: &str) -> Result<String> {
 fn to_hex(n: u8) -> [u8; 2] {
     let a = (n & 0xF0) >> 4;
     let b = n & 0xF;
-    let a = if a < 10 {
-        b'0' + a
-    } else {
-        b'A' + (a - 10)
-    };
-    let b = if b < 10 {
-        b'0' + b
-    } else {
-        b'A' + (b - 10)
-    };
+    let a = if a < 10 { b'0' + a } else { b'A' + (a - 10) };
+    let b = if b < 10 { b'0' + b } else { b'A' + (b - 10) };
     [a, b]
 }
 
@@ -225,28 +217,27 @@ fn encode(s: &str, kind: PctEncoded) -> String {
         match (kind, ch) {
             (PctEncoded::FComponent, '?') => {}
             (PctEncoded::QComponent, '?') if i != 0 => {}
-            (PctEncoded::RComponent, '?') if i != 0 && !matches!(s.chars().nth(i + 1), Some('=')) => {}
+            (PctEncoded::RComponent, '?')
+                if i != 0 && !matches!(s.chars().nth(i + 1), Some('=')) => {}
             (PctEncoded::FComponent, '/') => {}
             // For RFC2141 compatibility, percent-encode / in NSS
             (PctEncoded::RComponent | PctEncoded::QComponent, '/') if i != 0 => {}
             (
                 PctEncoded::RComponent | PctEncoded::QComponent | PctEncoded::FComponent,
-                '-' | '.' | '_' | '~'
-                | '!' | '$' | '&' | '\'' | '(' | ')' | '*' | '+' | ',' | ';' | '='
-                | ':' | '@',
+                '-' | '.' | '_' | '~' | '!' | '$' | '&' | '\'' | '(' | ')' | '*' | '+' | ',' | ';'
+                | '=' | ':' | '@',
             ) => {}
             // For RFC2141 compatibility, reduce non-pct-encoded char list
             (
                 PctEncoded::Nss,
-                '-' | '.' | '_'
-                | '!' | '$' | '\'' | '(' | ')' | '*' | '+' | ',' | ';' | '=' 
-                | ':' | '@'
+                '-' | '.' | '_' | '!' | '$' | '\'' | '(' | ')' | '*' | '+' | ',' | ';' | '=' | ':'
+                | '@',
             ) => {}
             (_, ch) if ch.is_ascii_alphanumeric() => {}
             (_, ch) => {
                 for byte in ch.encode_utf8(&mut buf).as_bytes() {
                     ret.push('%');
-                    for digit in to_hex(*byte){
+                    for digit in to_hex(*byte) {
                         ret.push(digit as char);
                     }
                 }
@@ -257,7 +248,6 @@ fn encode(s: &str, kind: PctEncoded) -> String {
     }
     ret
 }
-
 
 /// Percent-decode a NSS according to the RFC
 ///
