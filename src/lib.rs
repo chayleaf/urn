@@ -14,12 +14,12 @@
 //! # #[cfg(not(feature = "std"))]
 //! # fn main() { }
 //! # #[cfg(feature = "std")]
-//! # use urn::{Urn, UrnBuilder};
+//! # use urn::{Urn, UrnSlice, UrnBuilder};
 //! # #[cfg(feature = "std")]
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let urn = UrnBuilder::new("example", "1234:5678").build()?;
 //! assert_eq!(urn.as_str(), "urn:example:1234:5678");
-//! assert_eq!(urn, "urn:example:1234:5678".parse()?); // Using std::str::parse
+//! assert_eq!(urn, "urn:example:1234:5678".parse::<Urn>()?); // Using std::str::parse
 //! assert_eq!(urn.nss(), "1234:5678");
 //! # Ok(())
 //! # }
@@ -229,12 +229,12 @@ impl error::Error for Error {}
 /// Unlike [`Urn`]:
 /// - When created via `TryFrom<&str>`, allocations only occur if the URN isn't normalized
 ///   (uppercase percent-encoded characters and lowercase `urn` scheme and NID)
-/// - When created via `TryFrom<&mut str>`, no allocations are done at all (however, if you
-///   explicitly disable the `alloc` feature, attempts to to clone the `UrnSlice` created this way
-///   will panic).
+/// - When created via `TryFrom<&mut str>`, no allocations are done at all.
+///
+/// This means it isn't exactly a slice, more like a copy-on-write type (unless you disable
+/// `alloc`).
 ///
 /// `FromStr` is always required to allocate, so you should use `TryFrom` when possible.
-#[derive(Clone, Debug)]
 pub struct UrnSlice<'a> {
     // Entire URN string
     urn: TriCow<'a>,
@@ -487,6 +487,28 @@ impl<'a> UrnSlice<'a> {
     }
 }
 
+#[cfg(feature = "alloc")]
+impl<'a> ToOwned for UrnSlice<'a> {
+    type Owned = Urn;
+    fn to_owned(&self) -> Self::Owned {
+        Urn::from(self)
+    }
+}
+
+impl fmt::Debug for UrnSlice<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "UrnSlice({})", self.as_str())
+    }
+}
+
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+impl PartialEq<Urn> for UrnSlice<'_> {
+    fn eq(&self, other: &Urn) -> bool {
+        self == &other.0
+    }
+}
+
 impl AsRef<[u8]> for UrnSlice<'_> {
     fn as_ref(&self) -> &[u8] {
         self.urn.as_bytes()
@@ -585,7 +607,7 @@ impl serde::Serialize for UrnSlice<'_> {
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let urn = UrnBuilder::new("example", "1234:5678").build()?;
 /// assert_eq!(urn.as_str(), "urn:example:1234:5678");
-/// assert_eq!(urn, "urn:example:1234:5678".parse()?); // Using std::str::parse
+/// assert_eq!(urn, "urn:example:1234:5678".parse::<Urn>()?); // Using std::str::parse
 /// assert_eq!(urn.nss(), "1234:5678");
 /// # Ok(())
 /// # }
@@ -658,7 +680,7 @@ impl<'a> UrnBuilder<'a> {
     ///
     /// In case of a validation failure, returns an error specifying the component that failed
     /// validation
-    pub fn build(self) -> Result<UrnSlice<'static>> {
+    pub fn build(self) -> Result<Urn> {
         fn cow_push_str(c: &mut TriCow, s: &str) {
             if let TriCow::Owned(c) = c {
                 c.push_str(s);
@@ -704,7 +726,7 @@ impl<'a> UrnBuilder<'a> {
                 }
             }
         }
-        Ok(UrnSlice {
+        Ok(Urn(UrnSlice {
             // we already had to allocate since we use a builder, obviously allocations are allowed
             urn: s,
             // unwrap: NID length range is 2..=32 bytes, so it always fits into non-zero u8
@@ -732,7 +754,7 @@ impl<'a> UrnBuilder<'a> {
                         .map_err(|_| Error::InvalidQComponent)
                 })
                 .transpose()?,
-        })
+        }))
     }
 }
 

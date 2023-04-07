@@ -2,6 +2,7 @@ use crate::{Error, Result, UrnSlice};
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::{borrow::ToOwned, string::String};
 use core::{
+    borrow::{Borrow, BorrowMut},
     fmt,
     ops::{Deref, DerefMut},
     str::FromStr,
@@ -19,8 +20,20 @@ use core::{
 /// `FromStr` requires a single allocation, but `TryFrom<String>` doesn't, so prefer `TryFrom` when
 /// possible.
 #[repr(transparent)]
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct Urn(UrnSlice<'static>);
+#[derive(PartialEq, Eq, Hash)]
+pub struct Urn(pub(crate) UrnSlice<'static>);
+
+impl<'a> Borrow<UrnSlice<'a>> for Urn {
+    fn borrow(&self) -> &UrnSlice<'a> {
+        &self.0
+    }
+}
+
+impl BorrowMut<UrnSlice<'static>> for Urn {
+    fn borrow_mut(&mut self) -> &mut UrnSlice<'static> {
+        &mut self.0
+    }
+}
 
 impl<'a> From<UrnSlice<'a>> for Urn {
     fn from(value: UrnSlice<'a>) -> Self {
@@ -73,9 +86,15 @@ impl<'a> From<&mut UrnSlice<'a>> for Urn {
     }
 }
 
+impl Clone for Urn {
+    fn clone(&self) -> Self {
+        self.0.to_owned()
+    }
+}
+
 impl fmt::Debug for Urn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        write!(f, "Urn({})", self.as_str())
     }
 }
 
@@ -95,6 +114,18 @@ impl DerefMut for Urn {
 impl<'a> AsRef<UrnSlice<'a>> for Urn {
     fn as_ref(&self) -> &UrnSlice<'a> {
         &self.0
+    }
+}
+
+impl AsMut<UrnSlice<'static>> for Urn {
+    fn as_mut(&mut self) -> &mut UrnSlice<'static> {
+        &mut self.0
+    }
+}
+
+impl<'a> PartialEq<UrnSlice<'a>> for Urn {
+    fn eq(&self, other: &UrnSlice<'a>) -> bool {
+        &self.0 == other
     }
 }
 
