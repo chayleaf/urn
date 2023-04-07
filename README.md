@@ -9,10 +9,8 @@ and comparison is done according to the spec (meaning only part of the
 URN is used for equality checks). Some RFCs define per-namespace lexical
 equivalence rules, those aren't taken into account here. `no_std`
 support is available if you disable the default "std" feature. `alloc`
-is needed, but the `Urn` type is a wrapper around `String` and should
-only use a single allocation (but I haven't checked). You can even
-construct a `Urn` from your own `String` by using `TryFrom<String>`,
-that way it shouldn't allocate at all.
+is optional as well. `UrnSlice` is a borrowed URN, `Urn` is an owned
+URN. See [docs.rs](https://docs.rs/urn) for documentation.
 
 URNs have a surprising amount of obscure details to the point I'm not
 sure if other URN parsers can be trusted! Granted, there's very little
@@ -39,6 +37,9 @@ of them because almost nobody really needs URNs...
   minor cleanup, fixed a couple potential minor bugs
 - 0.5.1 - fix a panic in case there wasn't a valid utf-8 char boundary 4
   bytes into the string
+- 0.6.0 - add `alloc` feature, add `UrnSlice` type, add `percent`
+  module, don't impl `Deref<Target = str>`. The crate is getting close
+  to 1.0.
 
 ## License
 
