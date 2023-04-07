@@ -2,7 +2,7 @@
 
 #[cfg(feature = "alloc")]
 use crate::Error;
-use crate::{make_uppercase, Result, TriCow};
+use crate::{Result, TriCow};
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 use alloc::{string::String, vec::Vec};
 
@@ -51,7 +51,7 @@ fn parse(s: &mut TriCow, start: usize, kind: PctEncoded) -> Result<usize> {
                 let mut pct_chars = it.take(2);
                 if pct_chars.len() == 2 && pct_chars.all(|x| x.1.is_ascii_hexdigit()) {
                     // percent encoding must be normalized by uppercasing it
-                    make_uppercase(s, i + 1..i + 3)?;
+                    s.make_uppercase(i + 1..i + 3)?;
                     it = s.bytes().enumerate().skip(i + 3).peekable();
                 } else {
                     return Ok(i);

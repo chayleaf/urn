@@ -48,7 +48,7 @@ use core::error;
 use std::{borrow::ToOwned, error};
 
 mod cow;
-use cow::{make_lowercase, make_uppercase, replace_range, TriCow};
+use cow::TriCow;
 
 #[cfg(feature = "alloc")]
 mod owned;
@@ -87,7 +87,7 @@ fn parse_urn(mut s: TriCow) -> Result<UrnSlice> {
         return Err(Error::InvalidScheme);
     }
 
-    make_lowercase(&mut s, ..URN_PREFIX.len())?;
+    s.make_lowercase(..URN_PREFIX.len())?;
 
     if &s[..URN_PREFIX.len()] != URN_PREFIX {
         return Err(Error::InvalidScheme);
@@ -110,7 +110,7 @@ fn parse_urn(mut s: TriCow) -> Result<UrnSlice> {
     }
 
     // Now that we know the NID is valid, normalize it
-    make_lowercase(&mut s, nid_start..nid_end)?;
+    s.make_lowercase(nid_start..nid_end)?;
 
     let nss_start = nid_end + NID_NSS_SEPARATOR.len();
     let nss_end = parse_nss(&mut s, nss_start)?;
@@ -319,9 +319,9 @@ impl<'a> UrnSlice<'a> {
             return Err(Error::InvalidNid);
         }
         let mut nid = TriCow::Borrowed(nid);
-        make_lowercase(&mut nid, ..)?;
+        nid.make_lowercase(..)?;
         let range = self.nid_range();
-        replace_range(&mut self.urn, range, &nid)?;
+        self.urn.replace_range(range, &nid)?;
         // unwrap: NID length range is 2..=32 bytes, so it always fits into non-zero u8
         self.nid_len = NonZeroU8::new(nid.len().try_into().unwrap()).unwrap();
         Ok(())
@@ -353,7 +353,7 @@ impl<'a> UrnSlice<'a> {
         let nss_len =
             NonZeroU32::new(nss.len().try_into().map_err(|_| Error::InvalidNss)?).unwrap();
         let range = self.nss_range();
-        replace_range(&mut self.urn, range, &nss)?;
+        self.urn.replace_range(range, &nss)?;
         self.nss_len = nss_len;
         Ok(())
     }
@@ -392,14 +392,14 @@ impl<'a> UrnSlice<'a> {
             } else {
                 // insert RCOMP_PREFIX if r-component doesn't already exist
                 let nss_end = self.nss_range().end;
-                replace_range(&mut self.urn, nss_end..nss_end, RCOMP_PREFIX)?;
+                self.urn.replace_range(nss_end..nss_end, RCOMP_PREFIX)?;
                 nss_end + RCOMP_PREFIX.len()..nss_end + RCOMP_PREFIX.len()
             };
-            replace_range(&mut self.urn, range, &rc)?;
+            self.urn.replace_range(range, &rc)?;
             self.r_component_len = Some(NonZeroU32::new(rc_len).unwrap());
         } else if let Some(mut range) = self.r_component_range() {
             range.start -= RCOMP_PREFIX.len();
-            replace_range(&mut self.urn, range, "")?;
+            self.urn.replace_range(range, "")?;
             self.r_component_len = None;
         }
         Ok(())
@@ -439,14 +439,14 @@ impl<'a> UrnSlice<'a> {
             } else {
                 // insert QCOMP_PREFIX if q-component doesn't already exist
                 let pre_qc_end = self.pre_q_component_end();
-                replace_range(&mut self.urn, pre_qc_end..pre_qc_end, QCOMP_PREFIX)?;
+                self.urn.replace_range(pre_qc_end..pre_qc_end, QCOMP_PREFIX)?;
                 pre_qc_end + QCOMP_PREFIX.len()..pre_qc_end + QCOMP_PREFIX.len()
             };
-            replace_range(&mut self.urn, range, &qc)?;
+            self.urn.replace_range(range, &qc)?;
             self.q_component_len = Some(NonZeroU32::new(qc_len).unwrap());
         } else if let Some(mut range) = self.q_component_range() {
             range.start -= QCOMP_PREFIX.len();
-            replace_range(&mut self.urn, range, "")?;
+            self.urn.replace_range(range, "")?;
             self.q_component_len = None;
         }
         Ok(())
@@ -483,14 +483,14 @@ impl<'a> UrnSlice<'a> {
                 start
             } else {
                 let range = self.urn.len()..self.urn.len();
-                replace_range(&mut self.urn, range, FCOMP_PREFIX)?;
+                self.urn.replace_range(range, FCOMP_PREFIX)?;
                 self.urn.len()
             };
             let len = self.urn.len();
-            replace_range(&mut self.urn, start..len, &fc)?;
+            self.urn.replace_range(start..len, &fc)?;
         } else if let Some(start) = self.f_component_start() {
             let len = self.urn.len();
-            replace_range(&mut self.urn, start - FCOMP_PREFIX.len()..len, "")?;
+            self.urn.replace_range(start - FCOMP_PREFIX.len()..len, "")?;
         }
         Ok(())
     }
