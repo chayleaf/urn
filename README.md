@@ -7,10 +7,13 @@ A Rust crate for handling
 [URNs](https://datatracker.ietf.org/doc/html/rfc8141). Parsing
 and comparison is done according to the spec (meaning only part of the
 URN is used for equality checks). Some RFCs define per-namespace lexical
-equivalence rules, those aren't taken into account here. `no_std`
-support is available if you disable the default "std" feature. `alloc`
-is optional as well. `UrnSlice` is a borrowed URN, `Urn` is an owned
-URN. See [docs.rs](https://docs.rs/urn) for documentation.
+equivalence rules, those aren't taken into account here. RFC2141 is more
+lenient than RFC8141 at times (and vice versa), care is taken to be able
+to parse (and encode) either of them. Serde support is available behind
+a feature flag. `no_std` support is available if you disable the default
+"std" feature. `alloc` is optional as well. `UrnSlice` is a borrowed
+URN, `Urn` is an owned URN. See [docs.rs](https://docs.rs/urn) for
+documentation.
 
 URNs have a surprising amount of obscure details to the point I'm not
 sure if other URN parsers can be trusted! Granted, there's very little
