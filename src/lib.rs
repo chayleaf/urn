@@ -3,6 +3,9 @@
 //! Features
 //! - `serde` - [Serde](https://serde.rs) support
 //! - `std` (enabled by default) - [`std::error::Error`] integration
+//! - `alloc` (enabled by default) - [`alloc`] support (you probably want to keep this enabled)
+//! - `nightly` - use `core::error::Error` rather than `std::error::Error`. **Warning: this feature
+//!   might be removed later and it won't be considered a breaking change!**
 //!
 //! # Example
 //! ```
@@ -22,6 +25,7 @@
 #![allow(clippy::missing_panics_doc)]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(feature = "nightly", feature(error_in_core))]
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
@@ -33,8 +37,13 @@ use core::{
     fmt,
     hash::{self, Hash},
     num::{NonZeroU32, NonZeroU8},
-    ops::{Deref, Range},
+    ops::Range,
 };
+
+#[cfg(feature = "std")]
+use std::error;
+#[cfg(all(not(feature = "std"), feature = "nightly"))]
+use core::error;
 
 mod cow;
 use cow::{make_lowercase, make_uppercase, replace_range, TriCow};
@@ -44,6 +53,13 @@ mod owned;
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use owned::Urn;
+
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub mod percent;
+#[cfg(not(feature = "alloc"))]
+mod percent;
+use percent::{parse_nss, parse_r_component, parse_q_component, parse_f_component};
 
 /// Checks whether a string is a valid NID
 fn is_valid_nid(s: &str) -> bool {
@@ -55,88 +71,6 @@ fn is_valid_nid(s: &str) -> bool {
     (2..=32).contains(&s.len())
         && !s.starts_with('-')
         && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-}
-
-/// Different components are percent-encoded differently...
-#[derive(Copy, Clone)]
-enum PctEncoded {
-    Nss,
-    RComponent,
-    QComponent,
-    FComponent,
-}
-
-/// Parse percent-encoded string. Returns the end.
-fn parse_pct_encoded(s: &mut TriCow, start: usize, kind: PctEncoded) -> Result<usize> {
-    let mut it = s.bytes().enumerate().skip(start).peekable();
-    while let Some((i, ch)) = it.next() {
-        // unwrap: i is always less than to s.len(), s' length isn't changed in the loop
-        #[allow(clippy::match_same_arms)]
-        match (kind, ch) {
-            /* question mark handling */
-            // ? is always allowed in f-components
-            (PctEncoded::FComponent, b'?') => {}
-            // ? is a valid part of q-component if not at the start
-            (PctEncoded::QComponent, b'?') if i != start => {}
-            // ? is a valid part of r-component if not at the start, but ?= indicates the q-component start, so only allow the ? if it isn't followed by =
-            (PctEncoded::RComponent, b'?') if i != start && it.peek().map(|x| x.1) != Some(b'=') => {}
-            /* slash handling */
-            // slash is uniquely allowed at the start of f-component...
-            (PctEncoded::FComponent, b'/') => {}
-            // ...but it's allowed everywhere if it isn't at the start
-            (_, b'/') if i != start => {}
-            /* the rest is handled the same everywhere */
-            // various symbols that are allowed as pchar
-            (
-                _,
-                // unreserved = ALPHA / DIGIT / <the following symbols>
-                b'-' | b'.' | b'_' | b'~'
-                // sub-delims = <the following symbols>
-                | b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';' | b'='
-                // pchar = unreserved / pct-encoded / sub-delims / <the following symbols>
-                | b':' | b'@',
-            ) => {}
-            // pct-encoded = "%" HEXDIG HEXDIG
-            // HEXDIG =  DIGIT / "A" / "B" / "C" / "D" / "E" / "F"
-            // (ABNF strings are case insensitive)
-            (_, b'%') => {
-                let mut pct_chars = it.take(2);
-                if pct_chars.len() == 2 && pct_chars.all(|x| x.1.is_ascii_hexdigit()) {
-                    // percent encoding must be normalized by uppercasing it
-                    make_uppercase(s, i + 1..i + 3)?;
-                    it = s.bytes().enumerate().skip(i + 3).peekable();
-                } else {
-                    return Ok(i)
-                }
-            }
-            // ALPHA / DIGIT
-            (_, c) if c.is_ascii_alphanumeric() => {}
-            // other characters can't be part of this component, so this is the end
-            _ => return Ok(i),
-        }
-    }
-    // this was the last component!
-    Ok(s.len())
-}
-
-/// Returns the NSS end
-fn parse_nss(s: &mut TriCow, start: usize) -> Result<usize> {
-    parse_pct_encoded(s, start, PctEncoded::Nss)
-}
-
-/// Returns the r-component end
-fn parse_r_component(s: &mut TriCow, start: usize) -> Result<usize> {
-    parse_pct_encoded(s, start, PctEncoded::RComponent)
-}
-
-/// Returns the q-component end
-fn parse_q_component(s: &mut TriCow, start: usize) -> Result<usize> {
-    parse_pct_encoded(s, start, PctEncoded::QComponent)
-}
-
-/// Returns the f-component end
-fn parse_f_component(s: &mut TriCow, start: usize) -> Result<usize> {
-    parse_pct_encoded(s, start, PctEncoded::FComponent)
 }
 
 const URN_PREFIX: &str = "urn:";
@@ -278,10 +212,10 @@ impl fmt::Display for Error {
 
 type Result<T, E = Error> = core::result::Result<T, E>;
 
-#[cfg(feature = "std")]
-impl std::error::Error for Error {}
+#[cfg(any(feature = "std", feature = "nightly"))]
+impl error::Error for Error {}
 
-/// An RFC2141/8141 URN (Uniform Resource Name).
+/// A borrowed RFC2141/8141 URN (Uniform Resource Name).
 ///
 /// **Note:** the equivalence checks are done
 /// [according to the specification](https://www.rfc-editor.org/rfc/rfc8141.html#section-3),
@@ -289,6 +223,15 @@ impl std::error::Error for Error {}
 /// comparing using `Urn::as_str()` as the key. Some namespaces may define additional lexical
 /// equivalence rules, these aren't accounted for in this implementation (Meaning there might be
 /// false negatives for some namespaces). There will, however, be no false positives.
+///
+/// Unlike [`Urn`]:
+/// - When created via `TryFrom<&str>`, allocations only occur if the URN isn't normalized
+///   (uppercase percent-encoded characters and lowercase `urn` scheme and NID)
+/// - When created via `TryFrom<&mut str>`, no allocations are done at all (however, if you
+///   explicitly disable the `alloc` feature, attempts to to clone the `UrnSlice` created this way
+///   will panic).
+///
+/// `FromStr` is always required to allocate, so you should use `TryFrom` when possible.
 #[derive(Clone, Debug)]
 pub struct UrnSlice<'a> {
     // Entire URN string
@@ -350,7 +293,7 @@ impl<'a> UrnSlice<'a> {
             .map(|x| x + FCOMP_PREFIX.len())
     }
 
-    /// String representation of this URN (Canonicized).
+    /// String representation of this URN (Normalized).
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.urn
@@ -363,7 +306,9 @@ impl<'a> UrnSlice<'a> {
     pub fn nid(&self) -> &str {
         &self.urn[self.nid_range()]
     }
-    /// Set the NID (must be [a valid NID](https://datatracker.ietf.org/doc/html/rfc8141#section-2)).
+    /// Set the NID (must be [a valid
+    /// NID](https://datatracker.ietf.org/doc/html/rfc8141#section-2)).
+    ///
     /// # Errors
     /// Returns [`Error::InvalidNid`] in case of a validation failure.
     pub fn set_nid(&mut self, nid: &str) -> Result<()> {
@@ -378,14 +323,20 @@ impl<'a> UrnSlice<'a> {
         self.nid_len = NonZeroU8::new(nid.len().try_into().unwrap()).unwrap();
         Ok(())
     }
-    /// NSS (Namespace-specific string) identifying the resource.
+    /// Percent-encoded NSS (Namespace-specific string) identifying the resource.
     ///
     /// For example, in `urn:ietf:rfc:2648`, `rfs:2648` is the NSS.
+    ///
+    /// **See also:** [`percent::decode_nss`]
     #[must_use]
     pub fn nss(&self) -> &str {
         &self.urn[self.nss_range()]
     }
-    /// Set the NSS (must be [a valid NSS](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding).
+    /// Set the NSS (must be [a valid NSS](https://datatracker.ietf.org/doc/html/rfc8141#section-2)
+    /// and use percent-encoding).
+    ///
+    /// **See also:** [`percent::encode_nss`]
+    ///
     /// # Errors
     /// Returns [`Error::InvalidNss`] in case of a validation failure.
     pub fn set_nss(&mut self, nss: &str) -> Result<()> {
@@ -401,17 +352,25 @@ impl<'a> UrnSlice<'a> {
         self.nss_len = nss_len;
         Ok(())
     }
-    /// r-component, following the `?+` character sequence, to be used for passing parameters
-    /// to URN resolution services.
+    /// Percent-encoded r-component, following the `?+` character sequence, to be used for passing
+    /// parameters to URN resolution services.
     ///
     /// In `urn:example:foo-bar-baz-qux?+CCResolve:cc=uk`, the r-component is `CCResolve:cc=uk`.
     ///
-    /// Should not be used for equivalence checks. As of the time of writing this, exact semantics are undefined.
+    /// Should not be used for equivalence checks. As of the time of writing this, exact semantics
+    /// aren't in the RFC.
+    ///
+    /// **See also:** [`percent::decode_r_component`]
     #[must_use]
     pub fn r_component(&self) -> Option<&str> {
         self.r_component_range().map(|range| &self.urn[range])
     }
-    /// Set the r-component (must be [a valid r-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding).
+    /// Set the r-component (must be [a valid
+    /// r-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use
+    /// percent-encoding).
+    ///
+    /// **See also:** [`percent::encode_r_component`]
+    ///
     /// # Errors
     /// Returns [`Error::InvalidRComponent`] in case of a validation failure.
     pub fn set_r_component(&mut self, r_component: Option<&str>) -> Result<()> {
@@ -438,18 +397,25 @@ impl<'a> UrnSlice<'a> {
         }
         Ok(())
     }
-    /// q-component, following the `?=` character sequence. Has a similar function to the URL query
+    /// Percent-encoded q-component, following the `?=` character sequence. Has a similar function to the URL query
     /// string.
     ///
     /// In `urn:example:weather?=op=map&lat=39.56&lon=-104.85`,
     /// the q-component is `op=map&lat=39.56&lon=-104.85`.
     ///
     /// Should not be used for equivalence checks.
+    ///
+    /// **See also:** [`percent::decode_q_component`]
     #[must_use]
     pub fn q_component(&self) -> Option<&str> {
         self.q_component_range().map(|range| &self.urn[range])
     }
-    /// Set the q-component (must be [a valid q-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding).
+    /// Set the q-component (must be [a valid
+    /// q-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use
+    /// percent-encoding).
+    ///
+    /// **See also:** [`percent::encode_q_component`]
+    ///
     /// # Errors
     /// Returns [`Error::InvalidQComponent`] in case of a validation failure.
     pub fn set_q_component(&mut self, q_component: Option<&str>) -> Result<()> {
@@ -476,17 +442,24 @@ impl<'a> UrnSlice<'a> {
         }
         Ok(())
     }
-    /// f-component following the `#` character at the end of the URN. Has a similar function to
-    /// the URL fragment.
+    /// Percent-encoded f-component following the `#` character at the end of the URN. Has a
+    /// similar function to the URL fragment.
     ///
     /// In `urn:example:a123,z456#789`, the f-component is `789`.
     ///
     /// Should not be used for equivalence checks.
+    ///
+    /// **See also:** [`percent::decode_f_component`]
     #[must_use]
     pub fn f_component(&self) -> Option<&str> {
         self.f_component_start().map(|start| &self.urn[start..])
     }
-    /// Set the f-component (must be [a valid f-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use percent-encoding).
+    /// Set the f-component (must be [a valid
+    /// f-component](https://datatracker.ietf.org/doc/html/rfc8141#section-2) and use
+    /// percent-encoding).
+    ///
+    /// **See also:** [`percent::encode_f_component`]
+    ///
     /// # Errors
     /// Returns [`Error::InvalidFComponent`] in case of a validation failure.
     pub fn set_f_component(&mut self, f_component: Option<&str>) -> Result<()> {
@@ -509,13 +482,6 @@ impl<'a> UrnSlice<'a> {
             replace_range(&mut self.urn, start - FCOMP_PREFIX.len()..len, "")?;
         }
         Ok(())
-    }
-}
-
-impl Deref for UrnSlice<'_> {
-    type Target = str;
-    fn deref(&self) -> &Self::Target {
-        &self.urn
     }
 }
 
@@ -599,7 +565,7 @@ impl serde::Serialize for UrnSlice<'_> {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(self)
+        serializer.serialize_str(self.as_str())
     }
 }
 
@@ -634,6 +600,11 @@ pub struct UrnBuilder<'a> {
 #[cfg(feature = "alloc")]
 impl<'a> UrnBuilder<'a> {
     /// Create a new `UrnBuilder`.
+    ///
+    /// - `nid`: the namespace identifier
+    /// - `nss`: the percent-encoded NSS (namespace-specific string)
+    ///
+    /// **See also:** [`percent::encode_nss`]
     pub fn new(nid: &'a str, nss: &'a str) -> Self {
         Self {
             nid,
@@ -643,27 +614,35 @@ impl<'a> UrnBuilder<'a> {
             f_component: None,
         }
     }
-    /// Change the namespace id.
+    /// Change the namespace identifier.
     pub fn nid(mut self, nid: &'a str) -> Self {
         self.nid = nid;
         self
     }
-    /// Change the namespace-specific string (must be percent encoded as per RFC).
+    /// Change the namespace-specific string (must be percent encoded).
+    ///
+    /// **See also:** [`percent::encode_nss`]
     pub fn nss(mut self, nss: &'a str) -> Self {
         self.nss = nss;
         self
     }
-    /// Change the r-component (must be percent encoded as per RFC).
+    /// Change the r-component (must be percent encoded).
+    ///
+    /// **See also:** [`percent::encode_r_component`]
     pub fn r_component(mut self, r_component: Option<&'a str>) -> Self {
         self.r_component = r_component;
         self
     }
-    /// Change the q-component (must be percent encoded as per RFC).
+    /// Change the q-component (must be percent encoded).
+    ///
+    /// **See also:** [`percent::encode_q_component`]
     pub fn q_component(mut self, q_component: Option<&'a str>) -> Self {
         self.q_component = q_component;
         self
     }
-    /// Change the f-component (must be percent encoded as per RFC).
+    /// Change the f-component (must be percent encoded).
+    ///
+    /// **See also:** [`percent::encode_f_component`]
     pub fn f_component(mut self, f_component: Option<&'a str>) -> Self {
         self.f_component = f_component;
         self

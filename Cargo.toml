@@ -1,6 +1,6 @@
 [package]
 name = "urn"
-version = "0.6.0"
+version = "0.6.0-alpha.1"
 edition = "2021"
 readme = "README.md"
 authors = ["chayleaf <chayleaf-cratesio@pavluk.org>"]
@@ -23,3 +23,4 @@ default-features = false
 std = ["alloc"]
 default = ["std"]
 alloc = ["serde/alloc"]
+nightly = []
