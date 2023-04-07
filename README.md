@@ -39,6 +39,7 @@ of them because almost nobody really needs URNs...
   minor cleanup, fixed a couple potential minor bugs
 - 0.5.1 - fix a panic in case there wasn't a valid utf-8 char boundary 4
   bytes into the string
+- 0.6.0 - add `alloc` feature, add `UrnSlice` type
 
 ## License
 

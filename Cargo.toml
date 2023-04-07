@@ -1,6 +1,6 @@
 [package]
 name = "urn"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2021"
 readme = "README.md"
 authors = ["chayleaf <chayleaf-cratesio@pavluk.org>"]
@@ -14,10 +14,12 @@ categories = ["parser-implementations", "web-programming", "encoding"]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
-[dependencies]
-serde = { version = "1.0", optional = true, default-features = false, features = ["alloc"] }
+[dependencies.serde]
+version = "1.0"
+optional = true
+default-features = false
 
 [features]
 std = ["alloc"]
 default = ["std"]
-alloc = []
+alloc = ["serde/alloc"]
