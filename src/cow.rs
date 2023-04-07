@@ -6,6 +6,7 @@ use core::{ops::Deref, slice::SliceIndex};
 use super::Error;
 use super::Result;
 
+#[allow(clippy::module_name_repetitions)]
 pub enum TriCow<'a> {
     #[cfg(feature = "alloc")]
     Owned(String),
@@ -88,7 +89,7 @@ impl TriCow<'_> {
     where
         R: Clone + SliceIndex<[u8], Output = [u8]> + SliceIndex<str, Output = str>,
     {
-        if self.as_bytes()[range.clone()].iter().any(|b| b.is_ascii_lowercase()) {
+        if self.as_bytes()[range.clone()].iter().any(u8::is_ascii_lowercase) {
             self.to_mut()?[range].make_ascii_uppercase();
         }
         Ok(())
@@ -99,7 +100,7 @@ impl TriCow<'_> {
     where
         R: Clone + SliceIndex<[u8], Output = [u8]> + SliceIndex<str, Output = str>,
     {
-        if self.as_bytes()[range.clone()].iter().any(|b| b.is_ascii_uppercase()) {
+        if self.as_bytes()[range.clone()].iter().any(u8::is_ascii_uppercase) {
             // if this isn't ascii, it will fail later
             self.to_mut()?[range].make_ascii_lowercase();
         }

@@ -1,4 +1,5 @@
 //! This module contains functions for percent-encoding and decoding various components of a URN.
+#![cfg_attr(not(feature = "alloc"), allow(clippy::redundant_pub_crate))]
 
 #[cfg(feature = "alloc")]
 use crate::Error;
@@ -86,7 +87,7 @@ pub(crate) fn parse_f_component(s: &mut TriCow, start: usize) -> Result<usize> {
 
 /// must be a hex digit
 #[cfg(feature = "alloc")]
-fn parse_hex_char(ch: u8) -> u8 {
+const fn parse_hex_char(ch: u8) -> u8 {
     if ch.is_ascii_digit() {
         ch - b'0'
     } else if ch.is_ascii_lowercase() {
@@ -123,9 +124,8 @@ fn decode(s: &str, kind: PctEncoded) -> Option<String> {
                     );
                     it = s.bytes().enumerate().skip(i + 3).peekable();
                     continue;
-                } else {
-                    return None;
                 }
+                return None;
             }
             (_, c) if c.is_ascii_alphanumeric() => {}
             _ => return None,
@@ -147,6 +147,9 @@ fn decode(s: &str, kind: PctEncoded) -> Option<String> {
 /// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
+///
+/// # Errors
+/// Returns [`Error::InvalidNss`] in case of a validation failure.
 #[cfg(feature = "alloc")]
 pub fn decode_nss(s: &str) -> Result<String> {
     decode(s, PctEncoded::Nss).ok_or(Error::InvalidNss)
@@ -163,6 +166,9 @@ pub fn decode_nss(s: &str) -> Result<String> {
 /// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
+///
+/// # Errors
+/// Returns [`Error::InvalidRComponent`] in case of a validation failure.
 #[cfg(feature = "alloc")]
 pub fn decode_r_component(s: &str) -> Result<String> {
     decode(s, PctEncoded::RComponent).ok_or(Error::InvalidRComponent)
@@ -179,6 +185,9 @@ pub fn decode_r_component(s: &str) -> Result<String> {
 /// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
+///
+/// # Errors
+/// Returns [`Error::InvalidQComponent`] in case of a validation failure.
 #[cfg(feature = "alloc")]
 pub fn decode_q_component(s: &str) -> Result<String> {
     decode(s, PctEncoded::QComponent).ok_or(Error::InvalidQComponent)
@@ -195,13 +204,16 @@ pub fn decode_q_component(s: &str) -> Result<String> {
 /// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
+///
+/// # Errors
+/// Returns [`Error::InvalidFComponent`] in case of a validation failure.
 #[cfg(feature = "alloc")]
 pub fn decode_f_component(s: &str) -> Result<String> {
     decode(s, PctEncoded::FComponent).ok_or(Error::InvalidFComponent)
 }
 
 #[cfg(feature = "alloc")]
-fn to_hex(n: u8) -> [u8; 2] {
+const fn to_hex(n: u8) -> [u8; 2] {
     let a = (n & 0xF0) >> 4;
     let b = n & 0xF;
     let a = if a < 10 { b'0' + a } else { b'A' + (a - 10) };
@@ -214,6 +226,7 @@ fn encode(s: &str, kind: PctEncoded) -> String {
     let mut ret = String::with_capacity(s.len());
     let mut buf = [0u8; 8];
     for (i, ch) in s.chars().enumerate() {
+        #[allow(clippy::match_same_arms)]
         match (kind, ch) {
             (PctEncoded::FComponent, '?') => {}
             (PctEncoded::QComponent, '?') if i != 0 => {}
@@ -261,6 +274,7 @@ fn encode(s: &str, kind: PctEncoded) -> String {
 /// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
+#[must_use]
 #[cfg(feature = "alloc")]
 pub fn encode_nss(s: &str) -> String {
     encode(s, PctEncoded::Nss)
@@ -278,6 +292,7 @@ pub fn encode_nss(s: &str) -> String {
 /// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
+#[must_use]
 #[cfg(feature = "alloc")]
 pub fn encode_r_component(s: &str) -> String {
     encode(s, PctEncoded::RComponent)
@@ -295,6 +310,7 @@ pub fn encode_r_component(s: &str) -> String {
 /// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
+#[must_use]
 #[cfg(feature = "alloc")]
 pub fn encode_q_component(s: &str) -> String {
     encode(s, PctEncoded::QComponent)
@@ -312,6 +328,7 @@ pub fn encode_q_component(s: &str) -> String {
 /// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
+#[must_use]
 #[cfg(feature = "alloc")]
 pub fn encode_f_component(s: &str) -> String {
     encode(s, PctEncoded::FComponent)
