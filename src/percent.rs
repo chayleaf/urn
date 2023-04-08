@@ -269,7 +269,7 @@ fn encode(s: &str, kind: PctEncoded) -> String {
 /// ```
 /// # use urn::UrnBuilder; fn test_main() -> Result<(), urn::Error> {
 /// assert_eq!(
-///     UrnBuilder::new("example", &urn::percent::encode_nss("test nss"))
+///     UrnBuilder::new("example", &urn::percent::encode_nss("test nss")?)
 ///         .build()?
 ///         .as_str(),
 ///     "urn:example:test%20nss"
@@ -292,7 +292,7 @@ pub fn encode_nss(s: &str) -> Result<String> {
 /// # use urn::UrnBuilder; fn test_main() -> Result<(), urn::Error> {
 /// assert_eq!(
 ///     UrnBuilder::new("example", "nss")
-///         .r_component(Some(&urn::percent::encode_r_component("😂😂💯")))
+///         .r_component(Some(&urn::percent::encode_r_component("😂😂💯")?))
 ///         .build()?
 ///         .as_str(),
 ///     "urn:example:nss?+%F0%9F%98%82%F0%9F%98%82%F0%9F%92%AF"
@@ -315,7 +315,7 @@ pub fn encode_r_component(s: &str) -> Result<String> {
 /// # use urn::UrnBuilder; fn test_main() -> Result<(), urn::Error> {
 /// assert_eq!(
 ///     UrnBuilder::new("example", "nss")
-///         .q_component(Some(&urn::percent::encode_q_component("~q component~")))
+///         .q_component(Some(&urn::percent::encode_q_component("~q component~")?))
 ///         .build()?
 ///         .as_str(),
 ///     "urn:example:nss?=%7Eq%20component%7E"
@@ -338,7 +338,7 @@ pub fn encode_q_component(s: &str) -> Result<String> {
 /// # use urn::UrnBuilder; fn test_main() -> Result<(), urn::Error> {
 /// assert_eq!(
 ///     UrnBuilder::new("example", "nss")
-///         .f_component(Some(&urn::percent::encode_f_component("f-component (pretty much a fragment)")))
+///         .f_component(Some(&urn::percent::encode_f_component("f-component (pretty much a fragment)")?))
 ///         .build()?
 ///         .as_str(),
 ///     "urn:example:nss#f-component%20(pretty%20much%20a%20fragment)"
