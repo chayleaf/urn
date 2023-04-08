@@ -43,6 +43,7 @@ of them because almost nobody really needs URNs...
 - 0.6.0 - add `alloc` feature, add `UrnSlice` type, add `percent`
   module, don't impl `Deref<Target = str>`. The crate is getting close
   to 1.0.
+- 0.7.0 - add support for deserializing non-`'static` `UrnSlice`s
 
 ## License
 

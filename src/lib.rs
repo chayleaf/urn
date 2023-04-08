@@ -63,6 +63,9 @@ pub mod percent;
 mod percent;
 use percent::{parse_f_component, parse_nss, parse_q_component, parse_r_component};
 
+#[cfg(feature = "serde")]
+mod serde;
+
 /// Checks whether a string is a valid NID
 fn is_valid_nid(s: &str) -> bool {
     // RFC8141:
@@ -218,7 +221,11 @@ type Result<T, E = Error> = core::result::Result<T, E>;
 #[cfg(any(feature = "std", feature = "nightly"))]
 impl error::Error for Error {}
 
-/// A borrowed RFC2141/8141 URN (Uniform Resource Name).
+/// A borrowed RFC2141/8141 URN (Uniform Resource Name). This is a copy-on-write type.
+///
+/// It will have to allocate if you call any of the setters. If you create it via
+/// `TryFrom<String>`, the provided buffer will be used. If you disable `alloc` feature, this stops
+/// being a copy-on-write type and starts being a regular borrow.
 ///
 /// **Note:** the equivalence checks are done
 /// [according to the specification](https://www.rfc-editor.org/rfc/rfc8141.html#section-3),
@@ -231,9 +238,6 @@ impl error::Error for Error {}
 /// - When created via `TryFrom<&str>`, allocations only occur if the URN isn't normalized
 ///   (uppercase percent-encoded characters and lowercase `urn` scheme and NID)
 /// - When created via `TryFrom<&mut str>`, no allocations are done at all.
-///
-/// This means it isn't exactly a slice, more like a copy-on-write type (unless you disable
-/// `alloc`).
 ///
 /// `FromStr` is always required to allocate, so you should use `TryFrom` when possible.
 pub struct UrnSlice<'a> {
@@ -497,6 +501,7 @@ impl<'a> UrnSlice<'a> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<'a> ToOwned for UrnSlice<'a> {
     type Owned = Urn;
     fn to_owned(&self) -> Self::Owned {
@@ -511,7 +516,6 @@ impl fmt::Debug for UrnSlice<'_> {
 }
 
 #[cfg(feature = "alloc")]
-#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl PartialEq<Urn> for UrnSlice<'_> {
     fn eq(&self, other: &Urn) -> bool {
         self == &other.0
@@ -579,28 +583,6 @@ impl TryFrom<String> for UrnSlice<'static> {
     type Error = Error;
     fn try_from(value: String) -> Result<Self> {
         parse_urn(TriCow::Owned(value))
-    }
-}
-
-#[cfg(all(feature = "serde", feature = "alloc"))]
-#[cfg_attr(docsrs, doc(cfg(all(feature = "serde", feature = "alloc"))))]
-impl<'de> serde::Deserialize<'de> for UrnSlice<'static> {
-    fn deserialize<D>(de: D) -> Result<Self, <D as serde::Deserializer<'de>>::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        UrnSlice::try_from(String::deserialize(de)?).map_err(serde::de::Error::custom)
-    }
-}
-
-#[cfg(feature = "serde")]
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
-impl serde::Serialize for UrnSlice<'_> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(self.as_str())
     }
 }
 
