@@ -7,13 +7,18 @@ A Rust crate for handling
 [URNs](https://datatracker.ietf.org/doc/html/rfc8141). Parsing
 and comparison is done according to the spec (meaning only part of the
 URN is used for equality checks). Some RFCs define per-namespace lexical
-equivalence rules, those aren't taken into account here. RFC2141 is more
-lenient than RFC8141 at times (and vice versa), care is taken to be able
-to parse (and encode) either of them. Serde support is available behind
-a feature flag. `no_std` support is available if you disable the default
-"std" feature. `alloc` is optional as well. `UrnSlice` is a borrowed
-URN, `Urn` is an owned URN. See [docs.rs](https://docs.rs/urn) for
-documentation.
+equivalence rules, those aren't taken into account here.
+
+RFC2141 is more lenient than RFC8141 at times (and vice versa), care is
+taken to be able to parse either of them. When percent encoding URN
+components, the resulting URNs will always be valid for both RFC2141 and
+RFC8141 parsers. However, percent encoding/decoding rules may be
+different for some namespaces.
+
+Serde support is available behind a feature flag. `no_std` support is
+available if you disable the default "std" feature. `alloc` is optional
+as well. `UrnSlice` is a borrowed URN, `Urn` is an owned URN. See
+[docs.rs](https://docs.rs/urn) for documentation.
 
 URNs have a surprising amount of obscure details to the point I'm not
 sure if other URN parsers can be trusted! Granted, there's very little
@@ -43,7 +48,9 @@ of them because almost nobody really needs URNs...
 - 0.6.0 - add `alloc` feature, add `UrnSlice` type, add `percent`
   module, don't impl `Deref<Target = str>`. The crate is getting close
   to 1.0.
-- 0.7.0 - add support for deserializing non-`'static` `UrnSlice`s
+- 0.7.0 - add support for deserializing non-`'static` `UrnSlice`s,
+  always encode valid RFC2141 URNs, check for empty string in
+  `percent::encode_*`.
 
 ## License
 

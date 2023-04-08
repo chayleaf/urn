@@ -228,19 +228,21 @@ fn encode(s: &str, kind: PctEncoded) -> String {
     for (i, ch) in s.chars().enumerate() {
         #[allow(clippy::match_same_arms)]
         match (kind, ch) {
+            // ? and / are reserved chars in RFC2141, so they can be included
             (PctEncoded::FComponent, '?') => {}
             (PctEncoded::QComponent, '?') if i != 0 => {}
             (PctEncoded::RComponent, '?')
                 if i != 0 && !matches!(s.chars().nth(i + 1), Some('=')) => {}
             (PctEncoded::FComponent, '/') => {}
-            // For RFC2141 compatibility, percent-encode / in NSS
+            // For RFC2141 compatibility, omit / in NSS
             (PctEncoded::RComponent | PctEncoded::QComponent, '/') if i != 0 => {}
+            // & is reserved in RFC2141, but ~ isn't, omit it
             (
                 PctEncoded::RComponent | PctEncoded::QComponent | PctEncoded::FComponent,
-                '-' | '.' | '_' | '~' | '!' | '$' | '&' | '\'' | '(' | ')' | '*' | '+' | ',' | ';'
-                | '=' | ':' | '@',
+                '-' | '.' | '_' | '!' | '$' | '&' | '\'' | '(' | ')' | '*' | '+' | ',' | ';' | '='
+                | ':' | '@',
             ) => {}
-            // For RFC2141 compatibility, reduce non-pct-encoded char list
+            // In NSS, omit both ~ and &
             (
                 PctEncoded::Nss,
                 '-' | '.' | '_' | '!' | '$' | '\'' | '(' | ')' | '*' | '+' | ',' | ';' | '=' | ':'
@@ -274,10 +276,15 @@ fn encode(s: &str, kind: PctEncoded) -> String {
 /// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
-#[must_use]
+///
+/// # Errors
+/// Returns [`Error::InvalidNss`] when attempting to encode an empty string.
 #[cfg(feature = "alloc")]
-pub fn encode_nss(s: &str) -> String {
-    encode(s, PctEncoded::Nss)
+pub fn encode_nss(s: &str) -> Result<String> {
+    if s.is_empty() {
+        return Err(Error::InvalidNss)
+    }
+    Ok(encode(s, PctEncoded::Nss))
 }
 /// Percent-decode an r-component according to the RFC
 ///
@@ -292,10 +299,15 @@ pub fn encode_nss(s: &str) -> String {
 /// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
-#[must_use]
+///
+/// # Errors
+/// Returns [`Error::InvalidRComponent`] when attempting to encode an empty string.
 #[cfg(feature = "alloc")]
-pub fn encode_r_component(s: &str) -> String {
-    encode(s, PctEncoded::RComponent)
+pub fn encode_r_component(s: &str) -> Result<String> {
+    if s.is_empty() {
+        return Err(Error::InvalidRComponent)
+    }
+    Ok(encode(s, PctEncoded::RComponent))
 }
 /// Percent-decode a q-component according to the RFC
 ///
@@ -306,14 +318,19 @@ pub fn encode_r_component(s: &str) -> String {
 ///         .q_component(Some(&urn::percent::encode_q_component("~q component~")))
 ///         .build()?
 ///         .as_str(),
-///     "urn:example:nss?=~q%20component~"
+///     "urn:example:nss?=%7Eq%20component%7E"
 /// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
-#[must_use]
+///
+/// # Errors
+/// Returns [`Error::InvalidQComponent`] when attempting to encode an empty string.
 #[cfg(feature = "alloc")]
-pub fn encode_q_component(s: &str) -> String {
-    encode(s, PctEncoded::QComponent)
+pub fn encode_q_component(s: &str) -> Result<String> {
+    if s.is_empty() {
+        return Err(Error::InvalidQComponent)
+    }
+    Ok(encode(s, PctEncoded::QComponent))
 }
 /// Percent-decode an f-component according to the RFC
 ///
@@ -328,8 +345,12 @@ pub fn encode_q_component(s: &str) -> String {
 /// );
 /// # Ok(()) } test_main().unwrap();
 /// ```
-#[must_use]
+///
+/// # Errors
+/// None, this function returns a `Result` for API consistency. If the URN standard gets extended
+/// in the future, this may return `Error::InvalidFComponent`.
 #[cfg(feature = "alloc")]
-pub fn encode_f_component(s: &str) -> String {
-    encode(s, PctEncoded::FComponent)
+pub fn encode_f_component(s: &str) -> Result<String> {
+    // fragment is allowed to be empty
+    Ok(encode(s, PctEncoded::FComponent))
 }
