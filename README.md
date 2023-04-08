@@ -24,6 +24,13 @@ URNs have a surprising amount of obscure details to the point I'm not
 sure if other URN parsers can be trusted! Granted, there's very little
 of them because almost nobody really needs URNs...
 
+## Roadmap
+
+Currently, I'm looking for options to integrate with the
+`percent-encoding` crate. If that isn't possible, I still want to make
+percent-encoding/decoding functions return an iterator rather than a
+`String`. Once that's done, I think the crate will be ready for 1.0.
+
 ## Changelog
 
 - 0.1.0 - initial release
