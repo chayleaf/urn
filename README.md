@@ -31,6 +31,12 @@ Currently, I'm looking for options to integrate with the
 percent-encoding/decoding functions return an iterator rather than a
 `String`. Once that's done, I think the crate will be ready for 1.0.
 
+Additionally, I may add functions for getting certain subslices of the
+URN. For example, the RFC recommends not to pass the q-component and the
+f-component to resolution services, so I can add a function that returns
+the part of the URN that doesn't have the q-component and f-component.
+The only open question for this API is the naming.
+
 ## Changelog
 
 - 0.1.0 - initial release
